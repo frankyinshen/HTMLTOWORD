@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Markdown 转 Word (最终完美版)</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .controls { margin-bottom: 20px; display: flex; gap: 15px; }
+        button {
+            padding: 12px 24px; font-size: 16px; background-color: #0078d4;
+            color: white; border: none; border-radius: 5px; cursor: pointer;
+        }
+        button:hover { background-color: #106ebe; }
+        button.clear { background-color: #d83b01; }
+        
+        .main-container {
+            display: flex; width: 95%; max-width: 1400px; gap: 20px; height: 80vh;
+        }
+        .box {
+            flex: 1; display: flex; flex-direction: column;
+            background: white; padding: 20px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        textarea {
+            flex: 1; width: 100%; resize: none; padding: 10px;
+            font-family: Consolas, monospace; font-size: 14px;
+            border: 1px solid #ccc; box-sizing: border-box;
+        }
+        #preview {
+            flex: 1; overflow-y: auto; border: 1px solid #eee; padding: 30px;
+            background-color: #fff;
+        }
+        /* 预览区样式：模拟 Word 的左对齐和字体 */
+        #preview p, #preview li { font-size: 18px; line-height: 1.6; margin-bottom: 15px; text-align: left; }
+        #preview strong { color: #000; font-weight: bold; }
+        #preview h1, #preview h2, #preview h3 { text-align: left; color: #2E74B5; }
+    </style>
+</head>
+<body>
+
+    <h2>AI 转 Word (已修复：默认页面视图 + 排版完美)</h2>
+    <div class="controls">
+        <button onclick="downloadWord()">📥 下载 Word 文档</button>
+        <button class="clear" onclick="document.getElementById('md-input').value=''; render();">清空</button>
+    </div>
+
+    <div class="main-container">
+        <div class="box">
+            <h3>粘贴 AI 内容:</h3>
+            <textarea id="md-input" oninput="render()" placeholder="请在此粘贴..."></textarea>
+        </div>
+        <div class="box">
+            <h3>效果预览:</h3>
+            <div id="preview"></div>
+        </div>
+    </div>
+
+    <script>
+        marked.use({
+            breaks: true, 
+            gfm: true
+        });
+
+        function render() {
+            const input = document.getElementById('md-input').value;
+            const preview = document.getElementById('preview');
+            preview.innerHTML = marked.parse(input);
+        }
+
+        function downloadWord() {
+            const content = document.getElementById('preview').innerHTML;
+            
+            // 关键修改：加入了 XML 配置，强制 Word 使用 Print (页面) 视图
+            const header = `
+                <html xmlns:o='urn:schemas-microsoft-com:office:office' 
+                      xmlns:w='urn:schemas-microsoft-com:office:word' 
+                      xmlns='http://www.w3.org/TR/REC-html40'>
+                <head>
+                    <meta charset='utf-8'>
+                    <!-- 这段 XML 代码告诉 Word：请用页面视图打开，且缩放 100% -->
+                    <xml>
+                        <w:WordDocument>
+                            <w:View>Print</w:View>
+                            <w:Zoom>100</w:Zoom>
+                            <w:DoNotOptimizeForBrowser/>
+                        </w:WordDocument>
+                    </xml>
+                    <style>
+                        body { font-family: 'Calibri', 'Times New Roman', '宋体'; }
+                        
+                        /* 强制左对齐，防止文字被拉伸 */
+                        p, li, div, h1, h2, h3, h4, h5, h6, table { 
+                            text-align: left; 
+                        }
+
+                        /* 14pt 四号字 */
+                        p, li, div { 
+                            font-size: 14pt; 
+                            line-height: 150%; 
+                            margin-bottom: 10pt; 
+                        }
+
+                        strong { font-weight: bold; }
+
+                        h1 { font-size: 22pt; color: #2E74B5; margin-bottom: 15pt; }
+                        h2 { font-size: 18pt; color: #2E74B5; border-bottom: 1px solid #ccc; margin-top: 20pt; }
+                        h3 { font-size: 16pt; color: #1F4D78; margin-top: 15pt; }
+                        
+                        table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+                        td, th { border: 1px solid #000; padding: 8px; font-size: 14pt; }
+                    </style>
+                </head>
+                <body>
+            `;
+            
+            const footer = "</body></html>";
+            const sourceHTML = header + content + footer;
+
+            const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'Final_Document.doc';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        render();
+    </script>
+</body>
+</html>
