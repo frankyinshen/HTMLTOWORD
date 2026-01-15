@@ -2,8 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 (智能清洗+去乱码版)</title>
-    <!-- 引入解析库 -->
+    <title>AI 全能转换神器 (加粗修复版)</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
@@ -15,7 +14,6 @@
             padding: 20px;
             margin: 0;
         }
-        /* --- 顶部导航栏 --- */
         .tab-container {
             margin-bottom: 20px; display: flex; gap: 10px;
             background: #fff; padding: 5px; border-radius: 8px;
@@ -32,7 +30,6 @@
         }
         .tab-btn:hover:not(.active) { background-color: #f0f0f0; }
 
-        /* --- 工作区布局 --- */
         .workspace {
             display: none; width: 95%; max-width: 1400px; height: 80vh; gap: 20px;
         }
@@ -67,17 +64,12 @@
         .word-style p, .word-style li { font-size: 18px; line-height: 1.6; margin-bottom: 15px; text-align: left; }
         .word-style strong { color: #000; font-weight: bold; }
         
-        /* 标题去横线 */
         .word-style h1, .word-style h2, .word-style h3 { 
             text-align: left; color: #2E74B5; border-bottom: none !important; text-decoration: none !important;
         }
         .word-style hr { display: none !important; }
-        
-        /* 分页符预览线 */
-        .page-break-line {
-            border-top: 2px dashed #d83b01; margin: 40px 0; position: relative; text-align: center;
-        }
-        .page-break-line::after { content: "--- 分页符 (Page Break) ---"; background: #fff; padding: 0 10px; color: #d83b01; position: relative; top: -12px; font-size: 12px; }
+        .word-style ol, .word-style ul { padding-left: 20px; margin-top: 5px; }
+        .word-style li p { margin: 0; }
 
         /* Excel 预览 */
         #excel-preview table { width: 100%; border-collapse: collapse; margin-top: 10px; }
@@ -86,6 +78,11 @@
         }
         #excel-preview th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
         #excel-preview tr td:first-child { text-align: center; }
+        
+        .page-break-line {
+            border-top: 2px dashed #d83b01; margin: 40px 0; position: relative; text-align: center;
+        }
+        .page-break-line::after { content: "--- 分页符 (Page Break) ---"; background: #fff; padding: 0 10px; color: #d83b01; position: relative; top: -12px; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -139,7 +136,7 @@
                 <span>粘贴双语 Markdown:</span><div style="flex:1"></div>
                 <button class="action-btn clear" onclick="clearContent('split')">清空</button>
             </div>
-            <textarea id="split-input" oninput="renderSplit()" placeholder="请粘贴包含中文和英文的双语内容..."></textarea>
+            <textarea id="split-input" oninput="renderSplit()" placeholder="请粘贴双语内容..."></textarea>
         </div>
         <div class="box">
             <div class="controls">
@@ -153,7 +150,6 @@
     <script>
         if (typeof marked === 'undefined') { alert('Marked.js 加载失败，请刷新。'); } else { marked.use({ breaks: true, gfm: true }); }
 
-        // --- 切换逻辑 ---
         function switchTab(type, btnElement) {
             var buttons = document.getElementsByClassName('tab-btn');
             for (var i = 0; i < buttons.length; i++) buttons[i].classList.remove('active');
@@ -171,63 +167,71 @@
         }
 
         function stripHorizontalLines(html) {
-            let cleanHtml = html.replace(/<hr\s*\/?>/gi, "");
-            cleanHtml = cleanHtml.replace(/<\/hr>/gi, "");
-            return cleanHtml;
+            let clean = html.replace(/<hr\s*\/?>/gi, "").replace(/<\/hr>/gi, "");
+            clean = clean.replace(/<li>\s*<p>/gi, "<li>").replace(/<\/p>\s*<\/li>/gi, "</li>");
+            return clean;
+        }
+
+        function disableMarkdownLists(text) {
+            return text.replace(/^(\s*\d+)\./gm, '$1\\.');
         }
 
         // ============================
-        // ★★★ 核心修复：智能清洗算法 V2 ★★★
+        // ★★★ 核心修复：智能清洗 V5 (含加粗修复) ★★★
         // ============================
         function smartExtractEnglish(rawText) {
             const lines = rawText.split('\n');
             
             const processedLines = lines.map(line => {
                 const trimmed = line.trim();
-                if (!trimmed) return ""; // 保持空行
+                if (!trimmed) return ""; 
 
-                // 计算汉字数量
-                const chineseMatch = trimmed.match(/[\u4e00-\u9fa5]/g);
-                const chineseCount = chineseMatch ? chineseMatch.length : 0;
-                
-                // 计算英文字母数量 (不含数字/符号)
-                const englishMatch = trimmed.match(/[a-zA-Z]/g);
-                const englishCount = englishMatch ? englishMatch.length : 0;
+                const hasChinese = /[\u4e00-\u9fa5]/.test(line);
 
-                // 核心判断逻辑：
-                if (chineseCount > 0) {
-                    // 如果一行里汉字比英文多，或者汉字很多但没有英文
-                    // 我们认为这是一行中文翻译（包含少量的数字/符号如 1947, SETI）
-                    // 动作：直接整行扔掉 (DROP)
-                    if (chineseCount > englishCount || englishCount === 0) {
+                if (hasChinese) {
+                    let tempLine = line.replace(/[\u4e00-\u9fa5]/g, "");
+                    const englishLetterCount = (tempLine.match(/[a-zA-Z]/g) || []).length;
+
+                    // 阈值：英文字母少于5个，丢弃整行
+                    if (englishLetterCount < 5) {
                         return null; 
-                    }
-                    
-                    // 如果英文比汉字多（例如：# Chapter 1 第一章）
-                    // 动作：只删掉汉字，保留英文 (STRIP)
-                    else {
-                        return line.replace(/[\u4e00-\u9fa5]|[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]/g, "");
+                    } else {
+                        // 清洗：删中文、删中文标点
+                        let cleaned = line.replace(/[\u4e00-\u9fa5]|[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]/g, "");
+                        
+                        // 1. 删除空括号
+                        cleaned = cleaned.replace(/\(\s*\)/g, "");
+                        
+                        // 2. 清理多余空格
+                        cleaned = cleaned.replace(/\s+/g, " ");
+                        
+                        // 3. ★★★ 修复加粗 (Bold Fix) ★★★
+                        // 把 "** Text **" 变成 "**Text**"
+                        // 这一步至关重要，Markdown 不允许加粗符号内有空格
+                        cleaned = cleaned.replace(/\*\*\s+/g, "**"); // 去掉左边空格
+                        cleaned = cleaned.replace(/\s+\*\*/g, "**"); // 去掉右边空格
+                        
+                        return cleaned.trim();
                     }
                 }
-
-                // 如果完全没有汉字，直接保留
                 return line;
             });
 
-            // 过滤掉被扔掉的行 (null)，并重新组合
             return processedLines.filter(line => line !== null).join('\n');
         }
 
         // --- Word ---
         function renderWord() {
             const input = document.getElementById('word-input').value;
-            let html = marked.parse(input);
+            let noListInput = disableMarkdownLists(input);
+            let html = marked.parse(noListInput);
             html = stripHorizontalLines(html);
             document.getElementById('word-preview').innerHTML = html;
         }
 
         function downloadWord(type) {
             const content = document.getElementById('word-preview').innerHTML;
+            // 纯 Word 模式使用纯净版下载（最稳）
             downloadWordContent(content, "AI_Article.doc");
         }
 
@@ -275,28 +279,32 @@
         // --- 双语分离 ---
         function renderSplit() {
             const rawText = document.getElementById('split-input').value;
-            // 使用 V2 智能算法
             let englishText = smartExtractEnglish(rawText);
+            let noListEnglish = disableMarkdownLists(englishText);
+            let noListRaw = disableMarkdownLists(rawText);
 
-            let htmlPart1 = stripHorizontalLines(marked.parse(englishText));
-            let htmlPart2 = stripHorizontalLines(marked.parse(rawText));
+            let htmlPart1 = stripHorizontalLines(marked.parse(noListEnglish));
+            let htmlPart2 = stripHorizontalLines(marked.parse(noListRaw));
+            
             const previewHTML = `${htmlPart1}<div class="page-break-line"></div>${htmlPart2}`;
             document.getElementById('split-preview').innerHTML = previewHTML;
         }
 
         function downloadSplitWord() {
             const rawText = document.getElementById('split-input').value;
-            // 使用 V2 智能算法
             let englishText = smartExtractEnglish(rawText);
+            let noListEnglish = disableMarkdownLists(englishText);
+            let noListRaw = disableMarkdownLists(rawText);
 
-            let htmlPart1 = stripHorizontalLines(marked.parse(englishText));
-            let htmlPart2 = stripHorizontalLines(marked.parse(rawText));
+            let htmlPart1 = stripHorizontalLines(marked.parse(noListEnglish));
+            let htmlPart2 = stripHorizontalLines(marked.parse(noListRaw));
+            
             const combinedContent = `${htmlPart1}<br style="page-break-before: always; mso-break-type: section-break" />${htmlPart2}`;
             downloadWordContent(combinedContent, "Bilingual_Split_Doc.doc");
         }
 
         // ============================
-        // 核心下载逻辑
+        // 核心下载逻辑 (纯净版 - 最稳)
         // ============================
         function downloadWordContent(htmlContent, filename) {
             const header = `
@@ -310,10 +318,7 @@
                     </w:WordDocument>
                 </xml>
                 <style>
-                    @page {
-                        size: 21cm 29.7cm;
-                        margin: 2.54cm 2.54cm;
-                    }
+                    @page { size: 21cm 29.7cm; margin: 2.54cm 2.54cm; }
                     body { font-family: 'Calibri', 'Times New Roman', '宋体'; }
                     p, li, div, table { text-align: left; font-size: 14pt; line-height: 150%; margin-bottom: 10pt; }
                     strong { font-weight: bold; }
