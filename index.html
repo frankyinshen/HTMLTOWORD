@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 (加粗修复版)</title>
+    <title>AI 全能转换神器 (公式修复版)</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
@@ -15,14 +15,14 @@
             margin: 0;
         }
         .tab-container {
-            margin-bottom: 20px; display: flex; gap: 10px;
-            background: #fff; padding: 5px; border-radius: 8px;
+            margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+            background: #fff; padding: 10px; border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }
         .tab-btn {
-            padding: 10px 25px; font-size: 15px; border: none; cursor: pointer;
+            padding: 8px 20px; font-size: 15px; border: none; cursor: pointer;
             border-radius: 5px; font-weight: bold; transition: all 0.3s;
-            background: transparent; color: #666;
+            background: transparent; color: #666; margin: 2px;
         }
         .tab-btn.active {
             background-color: #0078d4; color: white;
@@ -48,6 +48,7 @@
         }
         button.action-btn.green { background-color: #107C10; }
         button.action-btn.purple { background-color: #6B69D6; }
+        button.action-btn.orange { background-color: #ff8c00; }
         button.action-btn.clear { background-color: #d83b01; }
         
         textarea {
@@ -60,10 +61,9 @@
             background-color: #fff; border-radius: 4px;
         }
 
-        /* --- 预览样式 --- */
+        /* 预览样式 */
         .word-style p, .word-style li { font-size: 18px; line-height: 1.6; margin-bottom: 15px; text-align: left; }
         .word-style strong { color: #000; font-weight: bold; }
-        
         .word-style h1, .word-style h2, .word-style h3 { 
             text-align: left; color: #2E74B5; border-bottom: none !important; text-decoration: none !important;
         }
@@ -91,6 +91,7 @@
         <button class="tab-btn active" onclick="switchTab('word', this)">📝 普通文章转 Word</button>
         <button class="tab-btn" onclick="switchTab('excel', this)">📊 表格转 Excel</button>
         <button class="tab-btn" onclick="switchTab('split', this)">🔀 双语分离转 Word</button>
+        <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     </div>
 
     <!-- 1. 普通 Word -->
@@ -147,6 +148,24 @@
         </div>
     </div>
 
+    <!-- 4. HTML -->
+    <div id="workspace-html" class="workspace">
+        <div class="box">
+            <div class="controls">
+                <span>粘贴 HTML 代码:</span><div style="flex:1"></div>
+                <button class="action-btn clear" onclick="clearContent('html')">清空</button>
+            </div>
+            <textarea id="html-input" oninput="renderHtml()" placeholder="请粘贴 HTML 源代码..."></textarea>
+        </div>
+        <div class="box">
+            <div class="controls">
+                <span>Word 预览:</span><div style="flex:1"></div>
+                <button class="action-btn orange" onclick="downloadHtmlWord()">📥 下载 Word</button>
+            </div>
+            <div id="html-preview" class="preview-area word-style"></div>
+        </div>
+    </div>
+
     <script>
         if (typeof marked === 'undefined') { alert('Marked.js 加载失败，请刷新。'); } else { marked.use({ breaks: true, gfm: true }); }
 
@@ -164,6 +183,32 @@
             if(type === 'split') renderSplit();
             else if(type === 'word') renderWord();
             else if(type === 'excel') renderExcel();
+            else if(type === 'html') renderHtml();
+        }
+
+        // ============================
+        // ★★★ 核心修复：数学公式翻译 ★★★
+        // ============================
+        function translateMathSymbols(text) {
+            // 1. 替换 LaTeX 符号为通用字符
+            text = text.replace(/\\times/g, "×");
+            text = text.replace(/\\div/g, "÷");
+            text = text.replace(/\\star/g, "☆"); // 或用 ★
+            text = text.replace(/\\le/g, "≤");
+            text = text.replace(/\\ge/g, "≥");
+            text = text.replace(/\\neq/g, "≠");
+            text = text.replace(/\\approx/g, "≈");
+            text = text.replace(/\\pm/g, "±");
+            text = text.replace(/\\cdot/g, "·");
+            
+            // 2. 去除两边的数学定界符 $...$
+            // 匹配 $内容$ 并只保留 内容
+            // 注意：这里使用非贪婪匹配，防止删掉一行中多个公式中间的文字
+            text = text.replace(/\$([^\$]+)\$/g, function(match, content){
+                return content;
+            });
+
+            return text;
         }
 
         function stripHorizontalLines(html) {
@@ -176,77 +221,56 @@
             return text.replace(/^(\s*\d+)\./gm, '$1\\.');
         }
 
-        // ============================
-        // ★★★ 核心修复：智能清洗 V5 (含加粗修复) ★★★
-        // ============================
         function smartExtractEnglish(rawText) {
             const lines = rawText.split('\n');
-            
             const processedLines = lines.map(line => {
                 const trimmed = line.trim();
                 if (!trimmed) return ""; 
-
                 const hasChinese = /[\u4e00-\u9fa5]/.test(line);
-
                 if (hasChinese) {
                     let tempLine = line.replace(/[\u4e00-\u9fa5]/g, "");
                     const englishLetterCount = (tempLine.match(/[a-zA-Z]/g) || []).length;
-
-                    // 阈值：英文字母少于5个，丢弃整行
                     if (englishLetterCount < 5) {
                         return null; 
                     } else {
-                        // 清洗：删中文、删中文标点
                         let cleaned = line.replace(/[\u4e00-\u9fa5]|[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]/g, "");
-                        
-                        // 1. 删除空括号
-                        cleaned = cleaned.replace(/\(\s*\)/g, "");
-                        
-                        // 2. 清理多余空格
+                        cleaned = cleaned.replace(/\(\s*\)/g, ""); 
                         cleaned = cleaned.replace(/\s+/g, " ");
-                        
-                        // 3. ★★★ 修复加粗 (Bold Fix) ★★★
-                        // 把 "** Text **" 变成 "**Text**"
-                        // 这一步至关重要，Markdown 不允许加粗符号内有空格
-                        cleaned = cleaned.replace(/\*\*\s+/g, "**"); // 去掉左边空格
-                        cleaned = cleaned.replace(/\s+\*\*/g, "**"); // 去掉右边空格
-                        
+                        cleaned = cleaned.replace(/\*\*\s+/g, "**").replace(/\s+\*\*/g, "**"); 
                         return cleaned.trim();
                     }
                 }
                 return line;
             });
-
             return processedLines.filter(line => line !== null).join('\n');
         }
 
-        // --- Word ---
+        // --- 1. Word ---
         function renderWord() {
-            const input = document.getElementById('word-input').value;
+            let input = document.getElementById('word-input').value;
+            // 先处理公式
+            input = translateMathSymbols(input);
             let noListInput = disableMarkdownLists(input);
             let html = marked.parse(noListInput);
             html = stripHorizontalLines(html);
             document.getElementById('word-preview').innerHTML = html;
         }
-
         function downloadWord(type) {
             const content = document.getElementById('word-preview').innerHTML;
-            // 纯 Word 模式使用纯净版下载（最稳）
             downloadWordContent(content, "AI_Article.doc");
         }
 
-        // --- Excel ---
+        // --- 2. Excel ---
         function renderExcel() {
-            const input = document.getElementById('excel-input').value;
+            let input = document.getElementById('excel-input').value;
+            input = translateMathSymbols(input); // 表格里也支持公式转换
             document.getElementById('excel-preview').innerHTML = marked.parse(input);
         }
-
         function downloadExcel() {
             let rawHtml = document.getElementById('excel-preview').innerHTML;
             let tempDiv = document.createElement('div');
             tempDiv.innerHTML = rawHtml;
             let table = tempDiv.querySelector('table');
-            
             if (table) {
                 table.setAttribute('border', '1');
                 let rows = table.querySelectorAll('tr');
@@ -263,22 +287,22 @@
                     });
                 });
             }
-
             const header = `
-                <html xmlns:o="urn:schemas-microsoft-com:office:office" 
-                      xmlns:x="urn:schemas-microsoft-com:office:excel" 
-                      xmlns="http://www.w3.org/TR/REC-html40">
+                <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
                 <head><meta charset="UTF-8">
                 <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/><x:FitToPage/><x:Footer><x:Data>&amp;C&amp;P</x:Data></x:Footer></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
                 <style>table { border-collapse: collapse; width: auto; } td, th { mso-number-format:"\@"; border: 0.5pt solid #000 !important; }</style>
                 </head><body>`;
-            
             downloadFile(header + tempDiv.innerHTML + "</body></html>", 'AI_Table.xls', 'application/vnd.ms-excel');
         }
 
-        // --- 双语分离 ---
+        // --- 3. Split ---
         function renderSplit() {
-            const rawText = document.getElementById('split-input').value;
+            let rawText = document.getElementById('split-input').value;
+            
+            // 先在源头处理公式，这样中文清洗和英文保留都会是干净的符号
+            rawText = translateMathSymbols(rawText);
+
             let englishText = smartExtractEnglish(rawText);
             let noListEnglish = disableMarkdownLists(englishText);
             let noListRaw = disableMarkdownLists(rawText);
@@ -289,54 +313,46 @@
             const previewHTML = `${htmlPart1}<div class="page-break-line"></div>${htmlPart2}`;
             document.getElementById('split-preview').innerHTML = previewHTML;
         }
-
         function downloadSplitWord() {
-            const rawText = document.getElementById('split-input').value;
+            let rawText = document.getElementById('split-input').value;
+            rawText = translateMathSymbols(rawText); // 公式处理
+
             let englishText = smartExtractEnglish(rawText);
             let noListEnglish = disableMarkdownLists(englishText);
             let noListRaw = disableMarkdownLists(rawText);
 
             let htmlPart1 = stripHorizontalLines(marked.parse(noListEnglish));
             let htmlPart2 = stripHorizontalLines(marked.parse(noListRaw));
-            
             const combinedContent = `${htmlPart1}<br style="page-break-before: always; mso-break-type: section-break" />${htmlPart2}`;
             downloadWordContent(combinedContent, "Bilingual_Split_Doc.doc");
         }
 
-        // ============================
-        // 核心下载逻辑 (纯净版 - 最稳)
-        // ============================
+        // --- 4. HTML ---
+        function renderHtml() {
+            const input = document.getElementById('html-input').value;
+            document.getElementById('html-preview').innerHTML = input;
+        }
+        function downloadHtmlWord() {
+            const content = document.getElementById('html-preview').innerHTML;
+            downloadWordContent(content, "HTML_to_Doc.doc");
+        }
+
+        // --- Download Helpers ---
         function downloadWordContent(htmlContent, filename) {
             const header = `
                 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
                 <head><meta charset='utf-8'>
-                <xml>
-                    <w:WordDocument>
-                        <w:View>Print</w:View>
-                        <w:Zoom>100</w:Zoom>
-                        <w:DoNotOptimizeForBrowser/>
-                    </w:WordDocument>
-                </xml>
+                <xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml>
                 <style>
                     @page { size: 21cm 29.7cm; margin: 2.54cm 2.54cm; }
                     body { font-family: 'Calibri', 'Times New Roman', '宋体'; }
                     p, li, div, table { text-align: left; font-size: 14pt; line-height: 150%; margin-bottom: 10pt; }
                     strong { font-weight: bold; }
-                    h1, h2, h3, h4, h5 { 
-                        color: #2E74B5; 
-                        margin-bottom: 15pt; 
-                        border-bottom: none !important; 
-                        text-decoration: none !important; 
-                    }
+                    h1, h2, h3, h4, h5 { color: #2E74B5; margin-bottom: 15pt; border-bottom: none !important; text-decoration: none !important; }
                     hr { display: none !important; border: none !important; height: 0 !important; }
                     table { border-collapse: collapse; width: 100%; margin: 15px 0; }
                     td, th { border: 1px solid #000; padding: 8px; font-size: 14pt; }
-                </style></head>
-                <body>
-                    ${htmlContent}
-                </body>
-                </html>`;
-            
+                </style></head><body>${htmlContent}</body></html>`;
             downloadFile(header, filename, 'application/msword');
         }
 
