@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 (公式修复版)</title>
+    <title>AI 全能转换神器 (Excel 完美修复版)</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
@@ -74,10 +74,9 @@
         /* Excel 预览 */
         #excel-preview table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         #excel-preview th, #excel-preview td {
-            border: 1px solid #000; padding: 12px; text-align: left; font-size: 18px; vertical-align: middle;
+            border: 1px solid #000; padding: 12px; text-align: left; font-size: 14px; vertical-align: middle;
         }
         #excel-preview th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
-        #excel-preview tr td:first-child { text-align: center; }
         
         .page-break-line {
             border-top: 2px dashed #d83b01; margin: 40px 0; position: relative; text-align: center;
@@ -190,24 +189,19 @@
         // ★★★ 核心修复：数学公式翻译 ★★★
         // ============================
         function translateMathSymbols(text) {
-            // 1. 替换 LaTeX 符号为通用字符
+            if(!text) return "";
             text = text.replace(/\\times/g, "×");
             text = text.replace(/\\div/g, "÷");
-            text = text.replace(/\\star/g, "☆"); // 或用 ★
+            text = text.replace(/\\star/g, "☆"); 
             text = text.replace(/\\le/g, "≤");
             text = text.replace(/\\ge/g, "≥");
             text = text.replace(/\\neq/g, "≠");
             text = text.replace(/\\approx/g, "≈");
             text = text.replace(/\\pm/g, "±");
             text = text.replace(/\\cdot/g, "·");
-            
-            // 2. 去除两边的数学定界符 $...$
-            // 匹配 $内容$ 并只保留 内容
-            // 注意：这里使用非贪婪匹配，防止删掉一行中多个公式中间的文字
             text = text.replace(/\$([^\$]+)\$/g, function(match, content){
                 return content;
             });
-
             return text;
         }
 
@@ -248,7 +242,6 @@
         // --- 1. Word ---
         function renderWord() {
             let input = document.getElementById('word-input').value;
-            // 先处理公式
             input = translateMathSymbols(input);
             let noListInput = disableMarkdownLists(input);
             let html = marked.parse(noListInput);
@@ -260,67 +253,96 @@
             downloadWordContent(content, "AI_Article.doc");
         }
 
-        // --- 2. Excel ---
+        // --- 2. Excel (修复版) ---
         function renderExcel() {
             let input = document.getElementById('excel-input').value;
-            input = translateMathSymbols(input); // 表格里也支持公式转换
+            input = translateMathSymbols(input);
             document.getElementById('excel-preview').innerHTML = marked.parse(input);
         }
+
         function downloadExcel() {
+            // 获取预览区域的 HTML
             let rawHtml = document.getElementById('excel-preview').innerHTML;
+            
+            // 创建一个临时的 DOM 元素来清洗数据
             let tempDiv = document.createElement('div');
             tempDiv.innerHTML = rawHtml;
+            
+            // 提取核心表格，丢弃外层多余的 div
             let table = tempDiv.querySelector('table');
-            if (table) {
-                table.setAttribute('border', '1');
-                let rows = table.querySelectorAll('tr');
-                rows.forEach((row) => {
-                    row.setAttribute('style', 'mso-height-source: auto;'); 
-                    let cells = row.querySelectorAll('td, th');
-                    cells.forEach((cell, idx) => {
-                        let baseStyle = 'border: 0.5pt solid #000; font-size: 14pt; font-family: 宋体; vertical-align: middle; white-space: normal;';
-                        if (idx === 0) { baseStyle += 'text-align: center;'; cell.setAttribute('align', 'center'); } 
-                        else { baseStyle += 'text-align: left; max-width: 450px;'; cell.setAttribute('align', 'left'); }
-                        if (cell.tagName.toLowerCase() === 'th') { baseStyle += 'background-color: #f2f2f2; font-weight: bold; text-align: center;'; cell.setAttribute('align', 'center'); }
-                        cell.setAttribute('style', baseStyle);
-                        cell.innerHTML = '<div style="padding: 12px 0; min-height: 24px;">' + cell.innerHTML + '</div>';
-                    });
-                });
+            
+            if (!table) {
+                alert("未检测到表格，请确保输入了 Markdown 表格格式！");
+                return;
             }
+
+            // 强制添加 Excel 需要的属性
+            table.setAttribute('border', '1');
+            table.style.borderCollapse = 'collapse';
+            table.style.width = '100%';
+
+            // 清洗每一个单元格
+            let rows = table.querySelectorAll('tr');
+            rows.forEach((row) => {
+                let cells = row.querySelectorAll('td, th');
+                cells.forEach((cell) => {
+                    // 移除可能导致 Excel 崩溃的复杂样式，只保留基础样式
+                    cell.style.border = '0.5pt solid #000';
+                    cell.style.padding = '10px';
+                    // 强制文本格式，防止数字变成了科学计数法
+                    cell.setAttribute('style', 'mso-number-format:"\@"; border: 0.5pt solid #000; padding: 10px;');
+                });
+            });
+
+            // 构建最纯净的 Excel HTML 模板
             const header = `
-                <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-                <head><meta charset="UTF-8">
-                <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/><x:FitToPage/><x:Footer><x:Data>&amp;C&amp;P</x:Data></x:Footer></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-                <style>table { border-collapse: collapse; width: auto; } td, th { mso-number-format:"\@"; border: 0.5pt solid #000 !important; }</style>
-                </head><body>`;
-            downloadFile(header + tempDiv.innerHTML + "</body></html>", 'AI_Table.xls', 'application/vnd.ms-excel');
+                <html xmlns:o="urn:schemas-microsoft-com:office:office" 
+                      xmlns:x="urn:schemas-microsoft-com:office:excel" 
+                      xmlns="http://www.w3.org/TR/REC-html40">
+                <head>
+                    <meta charset="UTF-8">
+                    <!--[if gte mso 9]>
+                    <xml>
+                        <x:ExcelWorkbook>
+                            <x:ExcelWorksheets>
+                                <x:ExcelWorksheet>
+                                    <x:Name>Sheet1</x:Name>
+                                    <x:WorksheetOptions>
+                                        <x:DisplayGridlines/>
+                                    </x:WorksheetOptions>
+                                </x:ExcelWorksheet>
+                            </x:ExcelWorksheets>
+                        </x:ExcelWorkbook>
+                    </xml>
+                    <![endif]-->
+                </head>
+                <body>
+                    ${table.outerHTML} 
+                </body>
+                </html>`;
+                
+            // 使用 table.outerHTML 确保只下载表格本身
+            downloadFile(header, 'AI_Table.xls', 'application/vnd.ms-excel');
         }
 
         // --- 3. Split ---
         function renderSplit() {
             let rawText = document.getElementById('split-input').value;
-            
-            // 先在源头处理公式，这样中文清洗和英文保留都会是干净的符号
             rawText = translateMathSymbols(rawText);
-
             let englishText = smartExtractEnglish(rawText);
             let noListEnglish = disableMarkdownLists(englishText);
             let noListRaw = disableMarkdownLists(rawText);
-
             let htmlPart1 = stripHorizontalLines(marked.parse(noListEnglish));
             let htmlPart2 = stripHorizontalLines(marked.parse(noListRaw));
-            
             const previewHTML = `${htmlPart1}<div class="page-break-line"></div>${htmlPart2}`;
             document.getElementById('split-preview').innerHTML = previewHTML;
         }
         function downloadSplitWord() {
             let rawText = document.getElementById('split-input').value;
-            rawText = translateMathSymbols(rawText); // 公式处理
-
+            rawText = translateMathSymbols(rawText);
             let englishText = smartExtractEnglish(rawText);
             let noListEnglish = disableMarkdownLists(englishText);
             let noListRaw = disableMarkdownLists(rawText);
-
             let htmlPart1 = stripHorizontalLines(marked.parse(noListEnglish));
             let htmlPart2 = stripHorizontalLines(marked.parse(noListRaw));
             const combinedContent = `${htmlPart1}<br style="page-break-before: always; mso-break-type: section-break" />${htmlPart2}`;
@@ -357,6 +379,7 @@
         }
 
         function downloadFile(content, filename, mimeType) {
+            // 使用 Blob 确保编码正确
             const blob = new Blob(['\ufeff', content], { type: mimeType });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
