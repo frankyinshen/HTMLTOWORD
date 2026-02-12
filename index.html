@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 (多表格完美版)</title>
+    <title>AI 全能转换神器 (横向页面+完美对齐版)</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
@@ -75,9 +75,15 @@
             color: #2E74B5; margin-top: 20px; margin-bottom: 10px; 
         }
         #excel-preview th, #excel-preview td {
-            border: 1px solid #000; padding: 8px; text-align: left; font-size: 14px; vertical-align: middle;
+            border: 1px solid #000; padding: 10px; 
+            font-size: 14pt; 
+            vertical-align: middle;
+            font-family: '宋体';
         }
+        /* 预览时的对齐逻辑 */
         #excel-preview th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
+        #excel-preview td { text-align: left; } /* 默认左对齐 */
+        #excel-preview td:first-child { text-align: center; } /* 第一列居中 */
         
         .page-break-line {
             border-top: 2px dashed #d83b01; margin: 40px 0; position: relative; text-align: center;
@@ -124,7 +130,7 @@
         <div class="box">
             <div class="controls">
                 <span>Excel 预览:</span><div style="flex:1"></div>
-                <button class="action-btn green" onclick="downloadExcel()">📊 下载完整 Excel</button>
+                <button class="action-btn green" onclick="downloadExcel()">📊 下载 Excel (横向页面+完美对齐)</button>
             </div>
             <div id="excel-preview" class="preview-area"></div>
         </div>
@@ -251,24 +257,19 @@
         }
 
         // ==========================================
-        // ★★★ 核心修复：多表格合并下载 ★★★
+        // ★★★ Excel 修复版：横向页面 + 混合对齐 ★★★
         // ==========================================
         function renderExcel() {
             let input = document.getElementById('excel-input').value;
             input = translateMathSymbols(input);
-            // 这里我们渲染所有的 Markdown 内容，包括标题和表格
             document.getElementById('excel-preview').innerHTML = marked.parse(input);
         }
 
         function downloadExcel() {
-            // 获取整个预览区的内容，而不是只抓取第一个 table
             let rawHtml = document.getElementById('excel-preview').innerHTML;
-            
-            // 创建临时容器进行清洗
             let tempDiv = document.createElement('div');
             tempDiv.innerHTML = rawHtml;
             
-            // 1. 找到所有的表格，给它们加上 Excel 需要的边框样式
             let tables = tempDiv.querySelectorAll('table');
             
             if (tables.length === 0) {
@@ -276,32 +277,45 @@
                 return;
             }
 
-            // 遍历所有表格进行修复
             tables.forEach(table => {
                 table.setAttribute('border', '1');
                 table.style.borderCollapse = 'collapse';
                 table.style.width = '100%';
-                table.style.marginBottom = '20px'; // 表格之间留点空隙
+                table.style.marginBottom = '20px';
 
                 let rows = table.querySelectorAll('tr');
                 rows.forEach((row) => {
                     let cells = row.querySelectorAll('td, th');
-                    cells.forEach((cell) => {
-                        // 强制文本格式，保留边框
-                        cell.setAttribute('style', 'mso-number-format:"\@"; border: 0.5pt solid #000; padding: 10px; vertical-align: middle;');
+                    
+                    // ★★★ 核心逻辑：遍历单元格判断对齐方式 ★★★
+                    cells.forEach((cell, index) => {
+                        let textAlign = 'left'; // 默认左对齐（用于普通内容列）
+                        
+                        // 如果是表头(th) 或者 是每行的第1个单元格(index===0) -> 居中
+                        if (cell.tagName === 'TH' || index === 0) {
+                            textAlign = 'center';
+                        }
+
+                        cell.setAttribute('style', 
+                            'mso-number-format:"\@"; ' + 
+                            'border: 0.5pt solid #000; ' + 
+                            'padding: 10px; ' + 
+                            'vertical-align: middle; ' +  // 垂直永远居中
+                            'text-align: ' + textAlign + '; ' + // 水平根据列变动
+                            'font-size: 14pt; ' + 
+                            'font-family: "宋体";'
+                        );
                     });
                 });
             });
 
-            // 2. 找到所有的标题 (H1-H6)，给它们加上颜色，区分不同表格
             let headers = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
             headers.forEach(header => {
                 header.style.color = '#2E74B5';
                 header.style.fontFamily = 'Microsoft YaHei';
             });
 
-            // 3. 构建 Excel 文件内容
-            // 我们直接导出 tempDiv.innerHTML，这样会包含：标题1 -> 表格1 -> 标题2 -> 表格2
+            // ★★★ XML 设置：横向(Landscape) + 页面水平居中(CenterHorizontally) ★★★
             const header = `
                 <html xmlns:o="urn:schemas-microsoft-com:office:office" 
                       xmlns:x="urn:schemas-microsoft-com:office:excel" 
@@ -316,6 +330,16 @@
                                     <x:Name>Sheet1</x:Name>
                                     <x:WorksheetOptions>
                                         <x:DisplayGridlines/>
+                                        <!-- 页面设置核心代码 -->
+                                        <x:PageSetup>
+                                            <x:Layout x:Orientation="Landscape"/> <!-- 横向 -->
+                                            <x:CenterHorizontally/> <!-- 页面水平居中 -->
+                                        </x:PageSetup>
+                                        <x:Print>
+                                            <x:ValidPrinterInfo/>
+                                            <x:PaperSizeIndex>9</x:PaperSizeIndex> <!-- A4纸 -->
+                                            <x:Scale>100</x:Scale>
+                                        </x:Print>
                                     </x:WorksheetOptions>
                                 </x:ExcelWorksheet>
                             </x:ExcelWorksheets>
@@ -324,6 +348,7 @@
                     <![endif]-->
                     <style>
                         br { mso-data-placement:same-cell; } 
+                        @page { mso-page-orientation: landscape; }
                     </style>
                 </head>
                 <body>
