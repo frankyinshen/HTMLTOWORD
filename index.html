@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 (Excel 完美修复版)</title>
+    <title>AI 全能转换神器 (多表格完美版)</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
@@ -68,13 +68,14 @@
             text-align: left; color: #2E74B5; border-bottom: none !important; text-decoration: none !important;
         }
         .word-style hr { display: none !important; }
-        .word-style ol, .word-style ul { padding-left: 20px; margin-top: 5px; }
-        .word-style li p { margin: 0; }
 
-        /* Excel 预览 */
-        #excel-preview table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        /* Excel 预览专用样式 */
+        #excel-preview table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+        #excel-preview h1, #excel-preview h2, #excel-preview h3, #excel-preview h4 { 
+            color: #2E74B5; margin-top: 20px; margin-bottom: 10px; 
+        }
         #excel-preview th, #excel-preview td {
-            border: 1px solid #000; padding: 12px; text-align: left; font-size: 14px; vertical-align: middle;
+            border: 1px solid #000; padding: 8px; text-align: left; font-size: 14px; vertical-align: middle;
         }
         #excel-preview th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
         
@@ -115,15 +116,15 @@
     <div id="workspace-excel" class="workspace">
         <div class="box">
             <div class="controls">
-                <span>粘贴表格 Markdown:</span><div style="flex:1"></div>
+                <span>粘贴表格 Markdown (支持多个表格):</span><div style="flex:1"></div>
                 <button class="action-btn clear" onclick="clearContent('excel')">清空</button>
             </div>
-            <textarea id="excel-input" oninput="renderExcel()" placeholder="请粘贴表格..."></textarea>
+            <textarea id="excel-input" oninput="renderExcel()" placeholder="请粘贴包含表格的 Markdown..."></textarea>
         </div>
         <div class="box">
             <div class="controls">
                 <span>Excel 预览:</span><div style="flex:1"></div>
-                <button class="action-btn green" onclick="downloadExcel()">📊 下载 Excel</button>
+                <button class="action-btn green" onclick="downloadExcel()">📊 下载完整 Excel</button>
             </div>
             <div id="excel-preview" class="preview-area"></div>
         </div>
@@ -185,9 +186,6 @@
             else if(type === 'html') renderHtml();
         }
 
-        // ============================
-        // ★★★ 核心修复：数学公式翻译 ★★★
-        // ============================
         function translateMathSymbols(text) {
             if(!text) return "";
             text = text.replace(/\\times/g, "×");
@@ -224,9 +222,8 @@
                 if (hasChinese) {
                     let tempLine = line.replace(/[\u4e00-\u9fa5]/g, "");
                     const englishLetterCount = (tempLine.match(/[a-zA-Z]/g) || []).length;
-                    if (englishLetterCount < 5) {
-                        return null; 
-                    } else {
+                    if (englishLetterCount < 5) { return null; } 
+                    else {
                         let cleaned = line.replace(/[\u4e00-\u9fa5]|[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]/g, "");
                         cleaned = cleaned.replace(/\(\s*\)/g, ""); 
                         cleaned = cleaned.replace(/\s+/g, " ");
@@ -253,48 +250,58 @@
             downloadWordContent(content, "AI_Article.doc");
         }
 
-        // --- 2. Excel (修复版) ---
+        // ==========================================
+        // ★★★ 核心修复：多表格合并下载 ★★★
+        // ==========================================
         function renderExcel() {
             let input = document.getElementById('excel-input').value;
             input = translateMathSymbols(input);
+            // 这里我们渲染所有的 Markdown 内容，包括标题和表格
             document.getElementById('excel-preview').innerHTML = marked.parse(input);
         }
 
         function downloadExcel() {
-            // 获取预览区域的 HTML
+            // 获取整个预览区的内容，而不是只抓取第一个 table
             let rawHtml = document.getElementById('excel-preview').innerHTML;
             
-            // 创建一个临时的 DOM 元素来清洗数据
+            // 创建临时容器进行清洗
             let tempDiv = document.createElement('div');
             tempDiv.innerHTML = rawHtml;
             
-            // 提取核心表格，丢弃外层多余的 div
-            let table = tempDiv.querySelector('table');
+            // 1. 找到所有的表格，给它们加上 Excel 需要的边框样式
+            let tables = tempDiv.querySelectorAll('table');
             
-            if (!table) {
-                alert("未检测到表格，请确保输入了 Markdown 表格格式！");
+            if (tables.length === 0) {
+                alert("未检测到表格，请确保输入内容包含 Markdown 表格！");
                 return;
             }
 
-            // 强制添加 Excel 需要的属性
-            table.setAttribute('border', '1');
-            table.style.borderCollapse = 'collapse';
-            table.style.width = '100%';
+            // 遍历所有表格进行修复
+            tables.forEach(table => {
+                table.setAttribute('border', '1');
+                table.style.borderCollapse = 'collapse';
+                table.style.width = '100%';
+                table.style.marginBottom = '20px'; // 表格之间留点空隙
 
-            // 清洗每一个单元格
-            let rows = table.querySelectorAll('tr');
-            rows.forEach((row) => {
-                let cells = row.querySelectorAll('td, th');
-                cells.forEach((cell) => {
-                    // 移除可能导致 Excel 崩溃的复杂样式，只保留基础样式
-                    cell.style.border = '0.5pt solid #000';
-                    cell.style.padding = '10px';
-                    // 强制文本格式，防止数字变成了科学计数法
-                    cell.setAttribute('style', 'mso-number-format:"\@"; border: 0.5pt solid #000; padding: 10px;');
+                let rows = table.querySelectorAll('tr');
+                rows.forEach((row) => {
+                    let cells = row.querySelectorAll('td, th');
+                    cells.forEach((cell) => {
+                        // 强制文本格式，保留边框
+                        cell.setAttribute('style', 'mso-number-format:"\@"; border: 0.5pt solid #000; padding: 10px; vertical-align: middle;');
+                    });
                 });
             });
 
-            // 构建最纯净的 Excel HTML 模板
+            // 2. 找到所有的标题 (H1-H6)，给它们加上颜色，区分不同表格
+            let headers = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            headers.forEach(header => {
+                header.style.color = '#2E74B5';
+                header.style.fontFamily = 'Microsoft YaHei';
+            });
+
+            // 3. 构建 Excel 文件内容
+            // 我们直接导出 tempDiv.innerHTML，这样会包含：标题1 -> 表格1 -> 标题2 -> 表格2
             const header = `
                 <html xmlns:o="urn:schemas-microsoft-com:office:office" 
                       xmlns:x="urn:schemas-microsoft-com:office:excel" 
@@ -315,14 +322,16 @@
                         </x:ExcelWorkbook>
                     </xml>
                     <![endif]-->
+                    <style>
+                        br { mso-data-placement:same-cell; } 
+                    </style>
                 </head>
                 <body>
-                    ${table.outerHTML} 
+                    ${tempDiv.innerHTML} 
                 </body>
                 </html>`;
                 
-            // 使用 table.outerHTML 确保只下载表格本身
-            downloadFile(header, 'AI_Table.xls', 'application/vnd.ms-excel');
+            downloadFile(header, 'AI_Complete_Table.xls', 'application/vnd.ms-excel');
         }
 
         // --- 3. Split ---
@@ -379,7 +388,6 @@
         }
 
         function downloadFile(content, filename, mimeType) {
-            // 使用 Blob 确保编码正确
             const blob = new Blob(['\ufeff', content], { type: mimeType });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
