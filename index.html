@@ -50,6 +50,7 @@
         button.action-btn.purple { background-color: #6B69D6; }
         button.action-btn.orange { background-color: #ff8c00; }
         button.action-btn.clear { background-color: #d83b01; }
+        button.action-btn.teal { background-color: #008080; }
         
         textarea {
             flex: 1; width: 100%; resize: none; padding: 15px;
@@ -80,15 +81,160 @@
             vertical-align: middle;
             font-family: '宋体';
         }
-        /* 预览时的对齐逻辑 */
         #excel-preview th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
-        #excel-preview td { text-align: left; } /* 默认左对齐 */
-        #excel-preview td:first-child { text-align: center; } /* 第一列居中 */
+        #excel-preview td { text-align: left; }
+        #excel-preview td:first-child { text-align: center; }
         
         .page-break-line {
             border-top: 2px dashed #d83b01; margin: 40px 0; position: relative; text-align: center;
         }
         .page-break-line::after { content: "--- 分页符 (Page Break) ---"; background: #fff; padding: 0 10px; color: #d83b01; position: relative; top: -12px; font-size: 12px; }
+
+        /* ===== 英文切割页面专用样式 ===== */
+        #workspace-voiceover {
+            flex-direction: column;
+            height: auto;
+            min-height: 80vh;
+        }
+        .voiceover-banner {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .voiceover-banner a {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #e94560;
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 15px;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .voiceover-banner a:hover { background: #c73652; transform: translateY(-1px); }
+        .voice-tip {
+            font-size: 13px;
+            color: #b0c4de;
+            line-height: 1.6;
+        }
+        .voice-tip strong { color: #e2c97e; font-size: 14px; }
+        .voice-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+        .voice-badge {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: #fff;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+        .voiceover-main {
+            display: flex;
+            gap: 20px;
+            flex: 1;
+        }
+        .chunks-area {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-height: 70vh;
+            padding-right: 4px;
+        }
+        .chunk-block {
+            background: #f8f9ff;
+            border: 1px solid #d0d8f0;
+            border-radius: 8px;
+            padding: 16px;
+            position: relative;
+        }
+        .chunk-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .chunk-label {
+            font-weight: bold;
+            color: #0078d4;
+            font-size: 14px;
+        }
+        .chunk-meta {
+            font-size: 12px;
+            color: #888;
+            background: #e8eef8;
+            padding: 3px 10px;
+            border-radius: 12px;
+        }
+        .chunk-meta.warn { background: #fff3e0; color: #e67e00; }
+        .chunk-textarea {
+            width: 100%;
+            min-height: 120px;
+            resize: vertical;
+            padding: 12px;
+            font-family: 'Calibri', 'Georgia', serif;
+            font-size: 14px;
+            line-height: 1.6;
+            border: 1px solid #c0ccdf;
+            border-radius: 5px;
+            box-sizing: border-box;
+            background: #fff;
+        }
+        .chunk-footer {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 8px;
+        }
+        .copy-btn {
+            padding: 7px 18px;
+            font-size: 13px;
+            background: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .copy-btn:hover { background: #005fa3; }
+        .copy-btn.copied { background: #107C10; }
+        .empty-hint {
+            text-align: center;
+            color: #aaa;
+            font-size: 15px;
+            padding: 60px 20px;
+        }
+        .vo-input-box { display: flex; flex-direction: column; }
+        .chunk-count-bar {
+            background: #eef2ff;
+            border: 1px solid #c5cfee;
+            border-radius: 6px;
+            padding: 10px 16px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #444;
+            display: none;
+        }
+        .chunk-count-bar.show { display: block; }
     </style>
 </head>
 <body>
@@ -98,6 +244,7 @@
         <button class="tab-btn" onclick="switchTab('excel', this)">📊 表格转 Excel</button>
         <button class="tab-btn" onclick="switchTab('split', this)">🔀 双语分离转 Word</button>
         <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
+        <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
     </div>
 
     <!-- 1. 普通 Word -->
@@ -169,6 +316,57 @@
                 <button class="action-btn orange" onclick="downloadHtmlWord()">📥 下载 Word</button>
             </div>
             <div id="html-preview" class="preview-area word-style"></div>
+        </div>
+    </div>
+
+    <!-- 5. 双语→英文切割 -->
+    <div id="workspace-voiceover" class="workspace">
+
+        <!-- 顶部横幅 -->
+        <div class="voiceover-banner">
+            <a href="https://app.clipchamp.com/consumer/editor/?feature=voiceover" target="_blank">
+                🎬 打开 Clipchamp 配音编辑器
+            </a>
+            <div class="voice-tip">
+                <strong>🎤 Voice 建议选择：</strong>
+                <div class="voice-badges">
+                    <span class="voice-badge">Andrew</span>
+                    <span class="voice-badge">Ava</span>
+                    <span class="voice-badge">Christopher</span>
+                    <span class="voice-badge">Sonia</span>
+                    <span class="voice-badge">Ryan</span>
+                    <span class="voice-badge">Sonia</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主体区域 -->
+        <div class="voiceover-main">
+            <!-- 左侧输入 -->
+            <div class="box vo-input-box" style="max-width: 420px; min-width: 300px;">
+                <div class="controls">
+                    <span>粘贴双语文章:</span>
+                    <div style="flex:1"></div>
+                    <button class="action-btn clear" onclick="clearVoiceover()">清空</button>
+                </div>
+                <textarea id="voiceover-input" oninput="processVoiceover()" 
+                    placeholder="粘贴双语文章（中英混合）...&#10;&#10;将自动提取纯英文并按不超过 7650 字符切割（以完整句子结尾）。"
+                    style="flex:1; min-height: 300px;"></textarea>
+                <div style="margin-top: 12px; font-size: 12px; color: #888; line-height: 1.6;">
+                    每段上限 <strong>7,650</strong> 字符 · 按句子边界切割
+                </div>
+            </div>
+
+            <!-- 右侧切割结果 -->
+            <div class="box" style="flex: 2; overflow: hidden; display: flex; flex-direction: column;">
+                <div class="controls">
+                    <span>切割结果 <span id="chunk-total-info" style="color:#0078d4; font-weight:bold;"></span>:</span>
+                </div>
+                <div id="chunk-count-bar" class="chunk-count-bar"></div>
+                <div id="chunks-area" class="chunks-area">
+                    <div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制的英文片段</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -256,9 +454,7 @@
             downloadWordContent(content, "AI_Article.doc");
         }
 
-        // ==========================================
-        // ★★★ Excel 修复版：横向页面 + 混合对齐 ★★★
-        // ==========================================
+        // --- 2. Excel ---
         function renderExcel() {
             let input = document.getElementById('excel-input').value;
             input = translateMathSymbols(input);
@@ -269,93 +465,28 @@
             let rawHtml = document.getElementById('excel-preview').innerHTML;
             let tempDiv = document.createElement('div');
             tempDiv.innerHTML = rawHtml;
-            
             let tables = tempDiv.querySelectorAll('table');
-            
-            if (tables.length === 0) {
-                alert("未检测到表格，请确保输入内容包含 Markdown 表格！");
-                return;
-            }
-
+            if (tables.length === 0) { alert("未检测到表格，请确保输入内容包含 Markdown 表格！"); return; }
             tables.forEach(table => {
                 table.setAttribute('border', '1');
                 table.style.borderCollapse = 'collapse';
                 table.style.width = '100%';
                 table.style.marginBottom = '20px';
-
                 let rows = table.querySelectorAll('tr');
                 rows.forEach((row) => {
                     let cells = row.querySelectorAll('td, th');
-                    
-                    // ★★★ 核心逻辑：遍历单元格判断对齐方式 ★★★
                     cells.forEach((cell, index) => {
-                        let textAlign = 'left'; // 默认左对齐（用于普通内容列）
-                        
-                        // 如果是表头(th) 或者 是每行的第1个单元格(index===0) -> 居中
-                        if (cell.tagName === 'TH' || index === 0) {
-                            textAlign = 'center';
-                        }
-
+                        let textAlign = 'left';
+                        if (cell.tagName === 'TH' || index === 0) { textAlign = 'center'; }
                         cell.setAttribute('style', 
-                            'mso-number-format:"\@"; ' + 
-                            'border: 0.5pt solid #000; ' + 
-                            'padding: 10px; ' + 
-                            'vertical-align: middle; ' +  // 垂直永远居中
-                            'text-align: ' + textAlign + '; ' + // 水平根据列变动
-                            'font-size: 14pt; ' + 
-                            'font-family: "宋体";'
+                            'mso-number-format:"\@"; border: 0.5pt solid #000; padding: 10px; vertical-align: middle; text-align: ' + textAlign + '; font-size: 14pt; font-family: "宋体";'
                         );
                     });
                 });
             });
-
             let headers = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
-            headers.forEach(header => {
-                header.style.color = '#2E74B5';
-                header.style.fontFamily = 'Microsoft YaHei';
-            });
-
-            // ★★★ XML 设置：横向(Landscape) + 页面水平居中(CenterHorizontally) ★★★
-            const header = `
-                <html xmlns:o="urn:schemas-microsoft-com:office:office" 
-                      xmlns:x="urn:schemas-microsoft-com:office:excel" 
-                      xmlns="http://www.w3.org/TR/REC-html40">
-                <head>
-                    <meta charset="UTF-8">
-                    <!--[if gte mso 9]>
-                    <xml>
-                        <x:ExcelWorkbook>
-                            <x:ExcelWorksheets>
-                                <x:ExcelWorksheet>
-                                    <x:Name>Sheet1</x:Name>
-                                    <x:WorksheetOptions>
-                                        <x:DisplayGridlines/>
-                                        <!-- 页面设置核心代码 -->
-                                        <x:PageSetup>
-                                            <x:Layout x:Orientation="Landscape"/> <!-- 横向 -->
-                                            <x:CenterHorizontally/> <!-- 页面水平居中 -->
-                                        </x:PageSetup>
-                                        <x:Print>
-                                            <x:ValidPrinterInfo/>
-                                            <x:PaperSizeIndex>9</x:PaperSizeIndex> <!-- A4纸 -->
-                                            <x:Scale>100</x:Scale>
-                                        </x:Print>
-                                    </x:WorksheetOptions>
-                                </x:ExcelWorksheet>
-                            </x:ExcelWorksheets>
-                        </x:ExcelWorkbook>
-                    </xml>
-                    <![endif]-->
-                    <style>
-                        br { mso-data-placement:same-cell; } 
-                        @page { mso-page-orientation: landscape; }
-                    </style>
-                </head>
-                <body>
-                    ${tempDiv.innerHTML} 
-                </body>
-                </html>`;
-                
+            headers.forEach(header => { header.style.color = '#2E74B5'; header.style.fontFamily = 'Microsoft YaHei'; });
+            const header = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/><x:PageSetup><x:Layout x:Orientation="Landscape"/><x:CenterHorizontally/></x:PageSetup><x:Print><x:ValidPrinterInfo/><x:PaperSizeIndex>9</x:PaperSizeIndex><x:Scale>100</x:Scale></x:Print></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--><style>br { mso-data-placement:same-cell; } @page { mso-page-orientation: landscape; }</style></head><body>${tempDiv.innerHTML}</body></html>`;
             downloadFile(header, 'AI_Complete_Table.xls', 'application/vnd.ms-excel');
         }
 
@@ -391,6 +522,189 @@
         function downloadHtmlWord() {
             const content = document.getElementById('html-preview').innerHTML;
             downloadWordContent(content, "HTML_to_Doc.doc");
+        }
+
+        // ======================================================
+        // ★★★ 5. 双语→英文切割 核心逻辑 ★★★
+        // ======================================================
+        const MAX_CHUNK = 7650;
+
+        function clearVoiceover() {
+            document.getElementById('voiceover-input').value = '';
+            processVoiceover();
+        }
+
+        function extractPureEnglish(rawText) {
+            // 逐行处理：移除中文行，提取中英混合行的英文部分
+            const lines = rawText.split('\n');
+            const result = [];
+            for (let line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) { result.push(''); continue; }
+
+                const hasChinese = /[\u4e00-\u9fa5]/.test(line);
+                if (!hasChinese) {
+                    // 纯英文行，保留（去掉Markdown标记符）
+                    let clean = line
+                        .replace(/^#+\s*/g, '')       // 去掉标题 #
+                        .replace(/\*\*/g, '')           // 去掉加粗
+                        .replace(/\*/g, '')             // 去掉斜体
+                        .replace(/^[-*]\s+/g, '')       // 去掉列表符号
+                        .replace(/^\d+\.\s+/g, '')      // 去掉数字列表
+                        .trim();
+                    if (clean) result.push(clean);
+                } else {
+                    // 中英混合行，提取英文
+                    let tempLine = line.replace(/[\u4e00-\u9fa5]/g, '');
+                    const englishLetterCount = (tempLine.match(/[a-zA-Z]/g) || []).length;
+                    if (englishLetterCount >= 5) {
+                        let cleaned = line
+                            .replace(/[\u4e00-\u9fa5]/g, '')
+                            .replace(/[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b\uff01]/g, '')
+                            .replace(/^#+\s*/g, '')
+                            .replace(/\*\*/g, '')
+                            .replace(/\*/g, '')
+                            .replace(/^[-*]\s+/g, '')
+                            .replace(/^\d+\.\s+/g, '')
+                            .replace(/\(\s*\)/g, '')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+                        if (cleaned) result.push(cleaned);
+                    }
+                    // 纯中文行（英文字母 < 5）直接跳过
+                }
+            }
+            // 合并为段落，去掉多余空行
+            return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
+
+        function splitIntoSentences(text) {
+            // 将文本按句子边界分割，返回句子数组
+            // 处理常见英文句子结束符：. ! ? 后跟空格或换行
+            const raw = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+            // 使用正则匹配句子（保留分隔符）
+            const sentences = [];
+            // 切分：以 . ! ? 结尾（考虑引号、括号）
+            const re = /[^.!?]*(?:[.!?](?:["')\]]*(?:\s|$)))/g;
+            let match;
+            let lastIndex = 0;
+            while ((match = re.exec(raw)) !== null) {
+                const s = match[0].trim();
+                if (s) sentences.push(s);
+                lastIndex = re.lastIndex;
+            }
+            // 剩余部分（没有句号结尾的）
+            const remaining = raw.slice(lastIndex).trim();
+            if (remaining) sentences.push(remaining);
+            return sentences.filter(s => s.length > 0);
+        }
+
+        function chunkSentences(sentences, maxLen) {
+            const chunks = [];
+            let current = '';
+            for (let i = 0; i < sentences.length; i++) {
+                const s = sentences[i];
+                const candidate = current ? current + ' ' + s : s;
+                if (candidate.length <= maxLen) {
+                    current = candidate;
+                } else {
+                    // 当前句子本身超过限制（罕见），强制加入
+                    if (!current) {
+                        chunks.push(s);
+                    } else {
+                        chunks.push(current);
+                        current = s;
+                    }
+                }
+            }
+            if (current) chunks.push(current);
+            return chunks;
+        }
+
+        function processVoiceover() {
+            const raw = document.getElementById('voiceover-input').value;
+            const chunksArea = document.getElementById('chunks-area');
+            const totalInfo = document.getElementById('chunk-total-info');
+            const countBar = document.getElementById('chunk-count-bar');
+
+            if (!raw.trim()) {
+                chunksArea.innerHTML = '<div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制的英文片段</div>';
+                totalInfo.textContent = '';
+                countBar.classList.remove('show');
+                return;
+            }
+
+            // 1. 提取纯英文
+            const englishText = extractPureEnglish(raw);
+            if (!englishText) {
+                chunksArea.innerHTML = '<div class="empty-hint">⚠️ 未提取到英文内容，请检查输入。</div>';
+                totalInfo.textContent = '';
+                countBar.classList.remove('show');
+                return;
+            }
+
+            // 2. 切割句子
+            const sentences = splitIntoSentences(englishText);
+
+            // 3. 组合成不超过 MAX_CHUNK 的块
+            const chunks = chunkSentences(sentences, MAX_CHUNK);
+
+            // 4. 渲染
+            totalInfo.textContent = `共 ${chunks.length} 段`;
+            countBar.textContent = `✅ 英文总字符：${englishText.length} | 已切割为 ${chunks.length} 段（每段上限 ${MAX_CHUNK} 字符）`;
+            countBar.classList.add('show');
+
+            chunksArea.innerHTML = '';
+            chunks.forEach((chunk, idx) => {
+                const len = chunk.length;
+                const isNearLimit = len > 7000;
+                const block = document.createElement('div');
+                block.className = 'chunk-block';
+                block.innerHTML = `
+                    <div class="chunk-header">
+                        <span class="chunk-label">📄 第 ${idx + 1} 段</span>
+                        <span class="chunk-meta ${isNearLimit ? 'warn' : ''}">${len.toLocaleString()} 字符${isNearLimit ? ' ⚠️ 接近上限' : ''}</span>
+                    </div>
+                    <textarea class="chunk-textarea" readonly id="chunk-${idx}">${escapeHtmlAttr(chunk)}</textarea>
+                    <div class="chunk-footer">
+                        <button class="copy-btn" id="copy-btn-${idx}" onclick="copyChunk(${idx})">
+                            📋 复制此段
+                        </button>
+                    </div>
+                `;
+                chunksArea.appendChild(block);
+            });
+        }
+
+        function escapeHtmlAttr(str) {
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function copyChunk(idx) {
+            const ta = document.getElementById('chunk-' + idx);
+            const btn = document.getElementById('copy-btn-' + idx);
+            if (!ta) return;
+            navigator.clipboard.writeText(ta.value).then(() => {
+                btn.textContent = '✅ 已复制！';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.innerHTML = '📋 复制此段';
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(() => {
+                // 降级方案
+                ta.select();
+                document.execCommand('copy');
+                btn.textContent = '✅ 已复制！';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.innerHTML = '📋 复制此段';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
         }
 
         // --- Download Helpers ---
