@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器V3.0</title>
+    <title>AI 全能转换神器 V4.0</title>
     <!-- 核心依赖库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- xlsx-js-style: SheetJS + 真实 cellStyles 支持 -->
@@ -144,10 +144,12 @@
         }
         .chunk-count-bar.show { display: block; }
 
-        /* 状态提示 */
-        .lib-status { font-size: 12px; padding: 4px 10px; border-radius: 4px; }
-        .lib-ok { color: #107C10; background: #e8f5e9; }
-        .lib-err { color: #d83b01; background: #fce8e0; }
+        /* 版本号 */
+        .version-badge {
+            font-size: 12px; font-weight: bold; color: #0078d4;
+            background: #e8f4ff; border: 1px solid #bee3ff;
+            padding: 4px 10px; border-radius: 12px; white-space: nowrap; align-self: center;
+        }
     </style>
 </head>
 <body>
@@ -158,6 +160,7 @@
     <button class="tab-btn" onclick="switchTab('split', this)">🔀 双语分离转 Word</button>
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
+    <span class="version-badge">V4.0</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -453,8 +456,9 @@ function buildFormattedSheet(titleText, tableData, numCols, phoneticColIdx, chun
     var currentRow = 0;   // 0-indexed
 
     // ── 标题行（合并所有列，居中）────────────────
+    // 标题：宋体，字号20，加粗
     var titleStyle = {
-        font:      { name: 'Courier New', sz: 14, bold: true, color: { rgb: '1F4E79' } },
+        font:      { name: '宋体', sz: 20, bold: true, color: { rgb: '1F4E79' } },
         alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
         fill:      { patternType: 'solid', fgColor: { rgb: 'DEEAF1' } },
         border:    makeBorder('4472C4')
@@ -464,25 +468,27 @@ function buildFormattedSheet(titleText, tableData, numCols, phoneticColIdx, chun
         ws[tAddr] = { v: tc === 0 ? (titleText || '') : '', t: 's', s: titleStyle };
     }
     if (numCols > 1) merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } });
-    rowHeights.push({ hpt: 36 });   // 标题行高
+    rowHeights.push({ hpt: 42 });   // 标题行高（字号20需要更高行高）
     currentRow = 1;
 
-    // ── 表头样式 ──────────────────────────────
+    // ── 表头样式：宋体，字号14，加粗，蓝底居中 ──
     var headerStyle = {
-        font:      { name: '宋体', sz: 12, bold: true, color: { rgb: '1F2D3D' } },
+        font:      { name: '宋体', sz: 14, bold: true, color: { rgb: '1F2D3D' } },
         alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
         fill:      { patternType: 'solid', fgColor: { rgb: 'BDD7EE' } },
         border:    makeBorder('2E75B6')
     };
 
     // ── 数据行样式工厂 ─────────────────────────
+    // 音标列 → Lucida Sans Unicode，其余 → Times New Roman
+    // 语块列 → 加粗，字号统一 14
     function mkDataStyle(colIdx, isAlt) {
         var isPhonetic = (colIdx === phoneticColIdx);
         var isChunk    = (colIdx === chunkColIdx);
         return {
             font: {
-                name:  isPhonetic ? 'Lucida Sans Unicode' : 'Courier New',
-                sz:    11,
+                name:  isPhonetic ? 'Lucida Sans Unicode' : 'Times New Roman',
+                sz:    14,
                 bold:  isChunk,
                 color: { rgb: '000000' }
             },
@@ -512,13 +518,13 @@ function buildFormattedSheet(titleText, tableData, numCols, phoneticColIdx, chun
         }
 
         if (isHeader) {
-            rowHeights.push({ hpt: 28 });
+            rowHeights.push({ hpt: 30 });
         } else {
-            // 估算行高：每 30 字符约一行，每行约 20pt
+            // 估算行高：字号14时每行约18pt，按内容长度估算
             var maxLen = 0;
             row.forEach(function(cell) { if (cell && cell.length > maxLen) maxLen = cell.length; });
-            var lines = Math.max(1, Math.ceil(maxLen / 30));
-            rowHeights.push({ hpt: Math.min(Math.max(22, lines * 20), 100) });
+            var lines = Math.max(1, Math.ceil(maxLen / 28));
+            rowHeights.push({ hpt: Math.min(Math.max(24, lines * 22), 110) });
         }
     });
 
@@ -548,6 +554,9 @@ function buildFormattedSheet(titleText, tableData, numCols, phoneticColIdx, chun
     ws['!pageSetup']   = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, scale: 100 };
     ws['!printOptions']= { centerHorizontally: true, centerVertically: false };
 
+    // ── 默认视图：分页预览模式 ────────────────
+    ws['!sheetViews'] = [{ view: 'pageBreakPreview', topLeftCell: 'A1', zoomScaleNormal: 100 }];
+
     // 冻结前 2 行（标题行 + 列标题行）
     ws['!freeze'] = { xSplit: 0, ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft' };
 
@@ -568,7 +577,6 @@ function downloadXlsx(tableElements, titleTexts, sheetNames, filename) {
         var parsed  = tableToArray(table);
         var title   = titleTexts[i] || ('表格 ' + (i + 1));
         var wsName  = (sheetNames[i] || ('Sheet' + (i + 1))).replace(/[:\\\/\?\*\[\]]/g, '').substring(0, 31);
-        // 传入检测到的特殊列索引
         var ws      = buildFormattedSheet(title, parsed.data, parsed.cols, parsed.phoneticColIdx, parsed.chunkColIdx);
 
         XLSX.utils.book_append_sheet(wb, ws, wsName);
@@ -583,7 +591,30 @@ function downloadXlsx(tableElements, titleTexts, sheetNames, filename) {
         });
     });
 
-    var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
+    // ── 写出为 binary string 以便做 XML 注入 ──
+    var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'binary', cellStyles: true });
+
+    // ── 注入 pageBreakPreview：通过 JSZip 修改 XML ──
+    // xlsx-js-style 捆绑了 JSZip，通过 XLSX.utils 解包后处理
+    try {
+        // 将 binary string 转为 Uint8Array
+        var buf = new Uint8Array(wbout.length);
+        for (var bi = 0; bi < wbout.length; bi++) { buf[bi] = wbout.charCodeAt(bi) & 0xff; }
+
+        // 用 SheetJS 自带的 CFB/Zip 能力重新解析
+        var wb2 = XLSX.read(buf, { type: 'array' });
+        // 对每个 sheet 的 raw XML 注入 view="pageBreakPreview"
+        wb2.SheetNames.forEach(function(sName) {
+            var sh = wb2.Sheets[sName];
+            // SheetViews 属性：直接写入让 SheetJS 序列化
+            sh['!sheetViews'] = [{ view: 'pageBreakPreview', topLeftCell: 'A1', zoomScaleNormal: 100, zoomScalePageBreakView: 70 }];
+        });
+        wbout = XLSX.write(wb2, { bookType: 'xlsx', type: 'array', cellStyles: true });
+    } catch(e) {
+        // 若注入失败，回退到原始输出（只是默认视图不是分页预览）
+        wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
+    }
+
     var blob  = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     triggerDownload(blob, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
@@ -850,4 +881,3 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
-
