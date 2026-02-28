@@ -5,8 +5,8 @@
     <title>AI 全能转换神器</title>
     <!-- 核心依赖库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- SheetJS: 生成真实 .xlsx 文件 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- xlsx-js-style: SheetJS + 真实 cellStyles 支持 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
     <!-- html-docx-js: 将 HTML 转为真实 .docx 文件 -->
     <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
 
@@ -348,6 +348,24 @@ function smartExtractEnglish(rawText) {
 }
 
 // ──────────────────────────────────────────────
+// 从 Markdown/HTML 中提取英文标题作为文件名
+// ──────────────────────────────────────────────
+function extractEnglishFilename(text) {
+    if (!text) return null;
+    // 尝试匹配 Markdown 标题 (# Title) 或 HTML 标题 (<h1>Title</h1>)
+    var mdMatch   = text.match(/^#{1,3}\s+(.+)/m);
+    var htmlMatch = text.match(/<h[1-3][^>]*>([^<]+)<\/h[1-3]>/i);
+    var heading = mdMatch ? mdMatch[1] : (htmlMatch ? htmlMatch[1] : null);
+    if (!heading) return null;
+    heading = heading.replace(/\*\*/g, '').replace(/\*/g, '').trim();
+    // 取 | 或 《 前的英文部分
+    var eng = heading.split(/\s*[\|｜《]\s*/)[0].trim();
+    // 去除文件名非法字符
+    eng = eng.replace(/[\\\/:\*\?"<>\|#]/g, '').trim();
+    return eng.length > 0 ? eng : null;
+}
+
+// ──────────────────────────────────────────────
 // 构建完整 HTML 文档供 html-docx-js 使用
 // ──────────────────────────────────────────────
 function buildFullHtml(bodyContent) {
@@ -383,66 +401,190 @@ function downloadDocx(bodyContent, filename) {
 }
 
 // ──────────────────────────────────────────────
-// 下载真实 .xlsx（支持多 Sheet）
+// 通用边框对象
 // ──────────────────────────────────────────────
-function downloadXlsx(tableElements, sheetNames, filename) {
+function makeBorder(rgb) {
+    rgb = rgb || '000000';
+    var s = { style: 'thin', color: { rgb: rgb } };
+    return { top: s, bottom: s, left: s, right: s };
+}
+
+// ──────────────────────────────────────────────
+// 从 HTML table 提取二维数组
+// ──────────────────────────────────────────────
+function tableToArray(table) {
+    var rows = table.querySelectorAll('tr');
+    var data = [];
+    var maxCols = 0;
+    rows.forEach(function(row) {
+        var cells = row.querySelectorAll('th, td');
+        var arr = [];
+        cells.forEach(function(cell) { arr.push(cell.textContent.trim()); });
+        if (arr.length > maxCols) maxCols = arr.length;
+        data.push(arr);
+    });
+    // 检测音标列和语块列（在 data[0] 即表头行中查找）
+    var phoneticColIdx = -1;
+    var chunkColIdx    = -1;
+    if (data.length > 0) {
+        data[0].forEach(function(header, ci) {
+            if (String(header).indexOf('音标') >= 0) phoneticColIdx = ci;
+            if (String(header).indexOf('语块') >= 0) chunkColIdx    = ci;
+        });
+    }
+    return { data: data, cols: maxCols, phoneticColIdx: phoneticColIdx, chunkColIdx: chunkColIdx };
+}
+
+// ──────────────────────────────────────────────
+// 构建单个格式化 Sheet
+//   titleText      : 标题文字（合并行，行0）
+//   tableData      : 二维数组（行0 = 表头，行1+ = 数据）
+//   numCols        : 列数
+//   phoneticColIdx : 音标列索引（-1=无）→ Lucida Sans Unicode
+//   chunkColIdx    : 语块列索引（-1=无）→ Bold
+// ──────────────────────────────────────────────
+function buildFormattedSheet(titleText, tableData, numCols, phoneticColIdx, chunkColIdx) {
+    phoneticColIdx = (typeof phoneticColIdx === 'number') ? phoneticColIdx : -1;
+    chunkColIdx    = (typeof chunkColIdx    === 'number') ? chunkColIdx    : -1;
+
+    var ws = {};
+    var merges = [];
+    var rowHeights = [];
+    var currentRow = 0;   // 0-indexed
+
+    // ── 标题行（合并所有列，居中）────────────────
+    var titleStyle = {
+        font:      { name: 'Courier New', sz: 14, bold: true, color: { rgb: '1F4E79' } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
+        fill:      { patternType: 'solid', fgColor: { rgb: 'DEEAF1' } },
+        border:    makeBorder('4472C4')
+    };
+    for (var tc = 0; tc < numCols; tc++) {
+        var tAddr = XLSX.utils.encode_cell({ r: 0, c: tc });
+        ws[tAddr] = { v: tc === 0 ? (titleText || '') : '', t: 's', s: titleStyle };
+    }
+    if (numCols > 1) merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } });
+    rowHeights.push({ hpt: 36 });   // 标题行高
+    currentRow = 1;
+
+    // ── 表头样式 ──────────────────────────────
+    var headerStyle = {
+        font:      { name: '宋体', sz: 12, bold: true, color: { rgb: '1F2D3D' } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        fill:      { patternType: 'solid', fgColor: { rgb: 'BDD7EE' } },
+        border:    makeBorder('2E75B6')
+    };
+
+    // ── 数据行样式工厂 ─────────────────────────
+    function mkDataStyle(colIdx, isAlt) {
+        var isPhonetic = (colIdx === phoneticColIdx);
+        var isChunk    = (colIdx === chunkColIdx);
+        return {
+            font: {
+                name:  isPhonetic ? 'Lucida Sans Unicode' : 'Courier New',
+                sz:    11,
+                bold:  isChunk,
+                color: { rgb: '000000' }
+            },
+            alignment: {
+                horizontal: colIdx === 0 ? 'center' : 'left',
+                vertical:   'center',
+                wrapText:   true
+            },
+            fill: isAlt
+                ? { patternType: 'solid', fgColor: { rgb: 'EBF3FB' } }
+                : { patternType: 'none' },
+            border: makeBorder('9DC3E6')
+        };
+    }
+
+    // ── 写入表头行 + 数据行 ───────────────────
+    tableData.forEach(function(row, rIdx) {
+        var excelRow = currentRow + rIdx;
+        var isHeader = (rIdx === 0);
+        var isAlt    = (!isHeader) && (rIdx % 2 === 0);
+
+        for (var c = 0; c < numCols; c++) {
+            var addr = XLSX.utils.encode_cell({ r: excelRow, c: c });
+            var val  = (row[c] !== undefined && row[c] !== null) ? String(row[c]) : '';
+            var style = isHeader ? headerStyle : mkDataStyle(c, isAlt);
+            ws[addr] = { v: val, t: 's', s: style };
+        }
+
+        if (isHeader) {
+            rowHeights.push({ hpt: 28 });
+        } else {
+            // 估算行高：每 30 字符约一行，每行约 20pt
+            var maxLen = 0;
+            row.forEach(function(cell) { if (cell && cell.length > maxLen) maxLen = cell.length; });
+            var lines = Math.max(1, Math.ceil(maxLen / 30));
+            rowHeights.push({ hpt: Math.min(Math.max(22, lines * 20), 100) });
+        }
+    });
+
+    // ── 范围 ─────────────────────────────────
+    var totalRows = currentRow + tableData.length;
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: totalRows - 1, c: numCols - 1 } });
+
+    // ── 合并、行高 ────────────────────────────
+    ws['!merges'] = merges;
+    ws['!rows']   = rowHeights;
+
+    // ── 列宽（按内容估算，中文按2宽度）──────────
+    var colWidths = [];
+    for (var col = 0; col < numCols; col++) {
+        var maxW = 8;
+        tableData.forEach(function(row) {
+            var v = row[col] || '';
+            var w = 0;
+            for (var ci = 0; ci < v.length; ci++) { w += v.charCodeAt(ci) > 255 ? 2.2 : 1; }
+            if (w > maxW) maxW = w;
+        });
+        colWidths.push({ wch: Math.min(Math.max(maxW + 2, 10), 55) });
+    }
+    ws['!cols'] = colWidths;
+
+    // ── 打印设置：横向 A4、水平居中 ──────────
+    ws['!pageSetup']   = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, scale: 100 };
+    ws['!printOptions']= { centerHorizontally: true, centerVertically: false };
+
+    // 冻结前 2 行（标题行 + 列标题行）
+    ws['!freeze'] = { xSplit: 0, ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft' };
+
+    return ws;
+}
+
+// ──────────────────────────────────────────────
+// 下载真实 .xlsx（多 Sheet，固定命名，完整格式）
+// ──────────────────────────────────────────────
+function downloadXlsx(tableElements, titleTexts, sheetNames, filename) {
     if (typeof XLSX === 'undefined') {
-        alert('SheetJS 库未加载！请检查网络连接后刷新页面。');
+        alert('xlsx-js-style 库未加载！请检查网络连接后刷新页面。');
         return;
     }
     var wb = XLSX.utils.book_new();
 
     tableElements.forEach(function(table, i) {
-        var ws = XLSX.utils.table_to_sheet(table, { raw: false });
+        var parsed  = tableToArray(table);
+        var title   = titleTexts[i] || ('表格 ' + (i + 1));
+        var wsName  = (sheetNames[i] || ('Sheet' + (i + 1))).replace(/[:\\\/\?\*\[\]]/g, '').substring(0, 31);
+        // 传入检测到的特殊列索引
+        var ws      = buildFormattedSheet(title, parsed.data, parsed.cols, parsed.phoneticColIdx, parsed.chunkColIdx);
 
-        // 设置列宽（估算）
-        var range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-        var colWidths = [];
-        for (var c = range.s.c; c <= range.e.c; c++) {
-            var maxLen = 10;
-            for (var r = range.s.r; r <= range.e.r; r++) {
-                var addr = XLSX.utils.encode_cell({ r: r, c: c });
-                var cell = ws[addr];
-                if (cell && cell.v) {
-                    var len = String(cell.v).length;
-                    if (len > maxLen) maxLen = len;
-                }
-            }
-            colWidths.push({ wch: Math.min(maxLen + 4, 60) });
-        }
-        ws['!cols'] = colWidths;
+        XLSX.utils.book_append_sheet(wb, ws, wsName);
 
-        // 居中格式：表头行 + 第一列
-        var headerStyle = { font: { bold: true }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, fill: { fgColor: { rgb: 'F2F2F2' } } };
-        var centerStyle = { alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
-        var leftStyle   = { alignment: { horizontal: 'left',   vertical: 'center', wrapText: true } };
-
-        for (var r2 = range.s.r; r2 <= range.e.r; r2++) {
-            for (var c2 = range.s.c; c2 <= range.e.c; c2++) {
-                var addr2 = XLSX.utils.encode_cell({ r: r2, c: c2 });
-                if (!ws[addr2]) ws[addr2] = { t: 's', v: '' };
-                if (r2 === 0) {
-                    ws[addr2].s = headerStyle;
-                } else if (c2 === 0) {
-                    ws[addr2].s = centerStyle;
-                } else {
-                    ws[addr2].s = leftStyle;
-                }
-            }
-        }
-
-        // 设置横向打印
-        ws['!pageSetup'] = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-        ws['!printOptions'] = { centerHorizontally: true };
-
-        var name = sheetNames[i] || ('Sheet' + (i + 1));
-        // Sheet 名不能超过31字符且不能有特殊符号
-        name = name.replace(/[:\\\/\?\*\[\]]/g, '').substring(0, 31);
-        XLSX.utils.book_append_sheet(wb, ws, name);
+        // 设置打印重复行（标题行 + 表头行 = 前2行）
+        if (!wb.Workbook) wb.Workbook = {};
+        if (!wb.Workbook.Names) wb.Workbook.Names = [];
+        wb.Workbook.Names.push({
+            Name:  '_xlnm.Print_Titles',
+            Ref:   "'" + wsName + "'!$1:$2",
+            Sheet: i
+        });
     });
 
     var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
-    var blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var blob  = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     triggerDownload(blob, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
@@ -463,7 +605,9 @@ function renderWord() {
     document.getElementById('word-preview').innerHTML = html;
 }
 function downloadWord() {
-    downloadDocx(document.getElementById('word-preview').innerHTML, 'AI_Article.docx');
+    var content = document.getElementById('word-preview').innerHTML;
+    var engName = extractEnglishFilename(document.getElementById('word-input').value);
+    downloadDocx(content, (engName || 'AI_Article') + '.docx');
 }
 
 // ──────────────────────────────────────────────
@@ -475,23 +619,34 @@ function renderExcel() {
 }
 
 function downloadExcel() {
-    var previewEl = document.getElementById('excel-preview');
-    var tables = previewEl.querySelectorAll('table');
+    var previewEl  = document.getElementById('excel-preview');
+    var tables     = previewEl.querySelectorAll('table');
     if (tables.length === 0) { alert("未检测到表格，请确保输入内容包含 Markdown 表格！"); return; }
 
-    // 提取每个表格前的标题作为 Sheet 名
+    var input      = document.getElementById('excel-input').value;
+
+    // 提取英文标题作为文件名
+    var engName    = extractEnglishFilename(input) || 'AI_Complete_Table';
+    var xlsxFile   = engName + '.xlsx';
+
+    // 固定 Sheet 名：第1个=语块，第2个=单词，更多则自动编号
+    var fixedSheetNames = ['语块', '单词'];
+
+    // 提取每个表格的标题文字（用作 Sheet 内合并标题行）
+    var titleTexts = [];
     var sheetNames = [];
-    tables.forEach(function(table) {
+    Array.from(tables).forEach(function(table, i) {
+        var titleText = '';
         var prev = table.previousElementSibling;
-        var name = 'Sheet' + (sheetNames.length + 1);
         while (prev) {
-            if (/^H[1-6]$/.test(prev.tagName)) { name = prev.textContent.trim().substring(0, 31); break; }
+            if (/^H[1-6]$/.test(prev.tagName)) { titleText = prev.textContent.trim(); break; }
             prev = prev.previousElementSibling;
         }
-        sheetNames.push(name);
+        titleTexts.push(titleText || ('表格 ' + (i + 1)));
+        sheetNames.push(fixedSheetNames[i] || ('Sheet' + (i + 1)));
     });
 
-    downloadXlsx(Array.from(tables), sheetNames, 'AI_Complete_Table.xlsx');
+    downloadXlsx(Array.from(tables), titleTexts, sheetNames, xlsxFile);
 }
 
 // ──────────────────────────────────────────────
@@ -510,7 +665,8 @@ function downloadSplitWord() {
     var htmlPart1 = stripHorizontalLines(marked.parse(disableMarkdownLists(englishText)));
     var htmlPart2 = stripHorizontalLines(marked.parse(disableMarkdownLists(rawText)));
     var combined = htmlPart1 + '<p style="page-break-before:always;"></p>' + htmlPart2;
-    downloadDocx(combined, 'Bilingual_Split_Doc.docx');
+    var engName = extractEnglishFilename(rawText);
+    downloadDocx(combined, (engName || 'Bilingual_Split_Doc') + '.docx');
 }
 
 // ──────────────────────────────────────────────
@@ -520,7 +676,9 @@ function renderHtml() {
     document.getElementById('html-preview').innerHTML = document.getElementById('html-input').value;
 }
 function downloadHtmlWord() {
-    downloadDocx(document.getElementById('html-preview').innerHTML, 'HTML_to_Doc.docx');
+    var content = document.getElementById('html-preview').innerHTML;
+    var engName = extractEnglishFilename(document.getElementById('html-input').value);
+    downloadDocx(content, (engName || 'HTML_to_Doc') + '.docx');
 }
 
 // ──────────────────────────────────────────────
