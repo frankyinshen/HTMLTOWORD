@@ -2,9 +2,16 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 (横向页面+完美对齐版)</title>
+    <title>AI 全能转换神器</title>
+    <!-- 核心依赖库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- SheetJS: 生成真实 .xlsx 文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- html-docx-js: 将 HTML 转为真实 .docx 文件 -->
+    <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+
     <style>
+        * { box-sizing: border-box; }
         body {
             font-family: 'Microsoft YaHei', sans-serif;
             background-color: #f0f2f5;
@@ -24,15 +31,10 @@
             border-radius: 5px; font-weight: bold; transition: all 0.3s;
             background: transparent; color: #666; margin: 2px;
         }
-        .tab-btn.active {
-            background-color: #0078d4; color: white;
-            box-shadow: 0 2px 5px rgba(0,120,212,0.3);
-        }
+        .tab-btn.active { background-color: #0078d4; color: white; box-shadow: 0 2px 5px rgba(0,120,212,0.3); }
         .tab-btn:hover:not(.active) { background-color: #f0f0f0; }
 
-        .workspace {
-            display: none; width: 95%; max-width: 1400px; height: 80vh; gap: 20px;
-        }
+        .workspace { display: none; width: 95%; max-width: 1400px; height: 80vh; gap: 20px; }
         .workspace.show { display: flex; }
 
         .box {
@@ -40,702 +42,653 @@
             background: white; padding: 20px; border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        .controls { margin-bottom: 15px; display: flex; gap: 10px; align-items: center; }
-        
+        .controls { margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
         button.action-btn {
             padding: 10px 20px; font-size: 14px; background-color: #0078d4;
-            color: white; border: none; border-radius: 4px; cursor: pointer;
+            color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;
         }
-        button.action-btn.green { background-color: #107C10; }
-        button.action-btn.purple { background-color: #6B69D6; }
-        button.action-btn.orange { background-color: #ff8c00; }
-        button.action-btn.clear { background-color: #d83b01; }
-        button.action-btn.teal { background-color: #008080; }
-        
+        button.action-btn.green    { background-color: #107C10; }
+        button.action-btn.purple   { background-color: #6B69D6; }
+        button.action-btn.orange   { background-color: #ff8c00; }
+        button.action-btn.clear    { background-color: #d83b01; }
+        button.action-btn:hover    { filter: brightness(1.1); }
+
         textarea {
             flex: 1; width: 100%; resize: none; padding: 15px;
             font-family: Consolas, monospace; font-size: 14px;
-            border: 1px solid #ccc; box-sizing: border-box; border-radius: 4px;
+            border: 1px solid #ccc; border-radius: 4px;
         }
         .preview-area {
             flex: 1; overflow-y: auto; border: 1px solid #eee; padding: 30px;
             background-color: #fff; border-radius: 4px;
         }
 
-        /* 预览样式 */
+        /* Word 预览样式 */
         .word-style p, .word-style li { font-size: 18px; line-height: 1.6; margin-bottom: 15px; text-align: left; }
         .word-style strong { color: #000; font-weight: bold; }
-        .word-style h1, .word-style h2, .word-style h3 { 
+        .word-style h1, .word-style h2, .word-style h3 {
             text-align: left; color: #2E74B5; border-bottom: none !important; text-decoration: none !important;
         }
         .word-style hr { display: none !important; }
 
-        /* Excel 预览专用样式 */
+        /* Excel 预览样式 */
         #excel-preview table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-        #excel-preview h1, #excel-preview h2, #excel-preview h3, #excel-preview h4 { 
-            color: #2E74B5; margin-top: 20px; margin-bottom: 10px; 
-        }
-        #excel-preview th, #excel-preview td {
-            border: 1px solid #000; padding: 10px; 
-            font-size: 14pt; 
-            vertical-align: middle;
-            font-family: '宋体';
-        }
+        #excel-preview h1, #excel-preview h2, #excel-preview h3, #excel-preview h4 { color: #2E74B5; margin: 20px 0 10px; }
+        #excel-preview th, #excel-preview td { border: 1px solid #000; padding: 10px; font-size: 14pt; vertical-align: middle; font-family: '宋体'; }
         #excel-preview th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
         #excel-preview td { text-align: left; }
         #excel-preview td:first-child { text-align: center; }
-        
-        .page-break-line {
-            border-top: 2px dashed #d83b01; margin: 40px 0; position: relative; text-align: center;
-        }
+
+        .page-break-line { border-top: 2px dashed #d83b01; margin: 40px 0; position: relative; text-align: center; }
         .page-break-line::after { content: "--- 分页符 (Page Break) ---"; background: #fff; padding: 0 10px; color: #d83b01; position: relative; top: -12px; font-size: 12px; }
 
-        /* ===== 英文切割页面专用样式 ===== */
-        #workspace-voiceover {
-            flex-direction: column;
-            height: auto;
-            min-height: 80vh;
-        }
+        /* ===== 英文切割页面 ===== */
+        #workspace-voiceover { flex-direction: column; height: auto; min-height: 80vh; }
+
         .voiceover-banner {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            color: white;
-            padding: 16px 24px;
-            border-radius: 10px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            flex-wrap: wrap;
+            color: white; padding: 16px 24px; border-radius: 10px; margin-bottom: 16px;
+            display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
         .voiceover-banner a {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: #e94560;
-            color: white;
-            text-decoration: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 15px;
-            transition: all 0.2s;
-            white-space: nowrap;
+            display: inline-flex; align-items: center; gap: 8px;
+            background: #e94560; color: white; text-decoration: none;
+            padding: 10px 20px; border-radius: 6px; font-weight: bold; font-size: 15px;
+            transition: all 0.2s; white-space: nowrap;
         }
         .voiceover-banner a:hover { background: #c73652; transform: translateY(-1px); }
-        .voice-tip {
-            font-size: 13px;
-            color: #b0c4de;
-            line-height: 1.6;
-        }
+        .voice-tip { font-size: 13px; color: #b0c4de; line-height: 1.6; }
         .voice-tip strong { color: #e2c97e; font-size: 14px; }
-        .voice-badges {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-            margin-top: 6px;
-        }
+        .voice-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
         .voice-badge {
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.3);
-            color: #fff;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: bold;
+            background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+            color: #fff; padding: 3px 10px; border-radius: 20px; font-size: 13px; font-weight: bold;
         }
-        .voiceover-main {
-            display: flex;
-            gap: 20px;
-            flex: 1;
-        }
+        .voiceover-main { display: flex; gap: 20px; flex: 1; }
+
         .chunks-area {
-            flex: 1;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            max-height: 70vh;
-            padding-right: 4px;
+            flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+            gap: 16px; max-height: 70vh; padding-right: 4px;
         }
         .chunk-block {
-            background: #f8f9ff;
-            border: 1px solid #d0d8f0;
-            border-radius: 8px;
-            padding: 16px;
-            position: relative;
+            background: #f8f9ff; border: 1px solid #d0d8f0; border-radius: 8px; padding: 16px;
         }
-        .chunk-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .chunk-label {
-            font-weight: bold;
-            color: #0078d4;
-            font-size: 14px;
-        }
-        .chunk-meta {
-            font-size: 12px;
-            color: #888;
-            background: #e8eef8;
-            padding: 3px 10px;
-            border-radius: 12px;
-        }
+        .chunk-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .chunk-label { font-weight: bold; color: #0078d4; font-size: 14px; }
+        .chunk-meta { font-size: 12px; color: #888; background: #e8eef8; padding: 3px 10px; border-radius: 12px; }
         .chunk-meta.warn { background: #fff3e0; color: #e67e00; }
+
         .chunk-textarea {
-            width: 100%;
-            min-height: 120px;
-            resize: vertical;
-            padding: 12px;
-            font-family: 'Calibri', 'Georgia', serif;
-            font-size: 14px;
-            line-height: 1.6;
-            border: 1px solid #c0ccdf;
-            border-radius: 5px;
-            box-sizing: border-box;
-            background: #fff;
+            width: 100%; min-height: 120px; resize: vertical; padding: 12px;
+            font-family: 'Calibri', 'Georgia', serif; font-size: 14px; line-height: 1.6;
+            border: 1px solid #c0ccdf; border-radius: 5px; background: #fff;
         }
-        .chunk-footer {
-            display: flex;
-            justify-content: flex-end;
-            margin-top: 8px;
-        }
+        .chunk-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+        .char-live { font-size: 12px; color: #999; }
+
         .copy-btn {
-            padding: 7px 18px;
-            font-size: 13px;
-            background: #0078d4;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            padding: 7px 18px; font-size: 13px; background: #0078d4; color: white;
+            border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s;
+            display: flex; align-items: center; gap: 6px;
         }
         .copy-btn:hover { background: #005fa3; }
         .copy-btn.copied { background: #107C10; }
-        .empty-hint {
-            text-align: center;
-            color: #aaa;
-            font-size: 15px;
-            padding: 60px 20px;
-        }
+
+        .empty-hint { text-align: center; color: #aaa; font-size: 15px; padding: 60px 20px; }
         .vo-input-box { display: flex; flex-direction: column; }
         .chunk-count-bar {
-            background: #eef2ff;
-            border: 1px solid #c5cfee;
-            border-radius: 6px;
-            padding: 10px 16px;
-            margin-bottom: 12px;
-            font-size: 13px;
-            color: #444;
-            display: none;
+            background: #eef2ff; border: 1px solid #c5cfee; border-radius: 6px;
+            padding: 10px 16px; margin-bottom: 12px; font-size: 13px; color: #444; display: none;
         }
         .chunk-count-bar.show { display: block; }
+
+        /* 状态提示 */
+        .lib-status { font-size: 12px; padding: 4px 10px; border-radius: 4px; }
+        .lib-ok { color: #107C10; background: #e8f5e9; }
+        .lib-err { color: #d83b01; background: #fce8e0; }
     </style>
 </head>
 <body>
 
-    <div class="tab-container">
-        <button class="tab-btn active" onclick="switchTab('word', this)">📝 普通文章转 Word</button>
-        <button class="tab-btn" onclick="switchTab('excel', this)">📊 表格转 Excel</button>
-        <button class="tab-btn" onclick="switchTab('split', this)">🔀 双语分离转 Word</button>
-        <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
-        <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
+<div class="tab-container">
+    <button class="tab-btn active" onclick="switchTab('word', this)">📝 普通文章转 Word</button>
+    <button class="tab-btn" onclick="switchTab('excel', this)">📊 表格转 Excel</button>
+    <button class="tab-btn" onclick="switchTab('split', this)">🔀 双语分离转 Word</button>
+    <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
+    <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
+</div>
+
+<!-- 1. 普通 Word -->
+<div id="workspace-word" class="workspace show">
+    <div class="box">
+        <div class="controls">
+            <span>粘贴 Markdown:</span><div style="flex:1"></div>
+            <button class="action-btn clear" onclick="clearContent('word')">清空</button>
+        </div>
+        <textarea id="word-input" oninput="renderWord()" placeholder="请粘贴 AI 生成的文章..."></textarea>
     </div>
-
-    <!-- 1. 普通 Word -->
-    <div id="workspace-word" class="workspace show">
-        <div class="box">
-            <div class="controls">
-                <span>粘贴 Markdown:</span><div style="flex:1"></div>
-                <button class="action-btn clear" onclick="clearContent('word')">清空</button>
-            </div>
-            <textarea id="word-input" oninput="renderWord()" placeholder="请粘贴 AI 生成的文章..."></textarea>
+    <div class="box">
+        <div class="controls">
+            <span>预览:</span><div style="flex:1"></div>
+            <span id="docx-lib-status" class="lib-status"></span>
+            <button class="action-btn" onclick="downloadWord()">📥 下载 Word (.docx)</button>
         </div>
-        <div class="box">
-            <div class="controls">
-                <span>预览:</span><div style="flex:1"></div>
-                <button class="action-btn" onclick="downloadWord('word')">📥 下载 Word</button>
-            </div>
-            <div id="word-preview" class="preview-area word-style"></div>
-        </div>
+        <div id="word-preview" class="preview-area word-style"></div>
     </div>
+</div>
 
-    <!-- 2. Excel -->
-    <div id="workspace-excel" class="workspace">
-        <div class="box">
-            <div class="controls">
-                <span>粘贴表格 Markdown (支持多个表格):</span><div style="flex:1"></div>
-                <button class="action-btn clear" onclick="clearContent('excel')">清空</button>
-            </div>
-            <textarea id="excel-input" oninput="renderExcel()" placeholder="请粘贴包含表格的 Markdown..."></textarea>
+<!-- 2. Excel -->
+<div id="workspace-excel" class="workspace">
+    <div class="box">
+        <div class="controls">
+            <span>粘贴表格 Markdown（支持多个表格，每个表格一个 Sheet）:</span><div style="flex:1"></div>
+            <button class="action-btn clear" onclick="clearContent('excel')">清空</button>
         </div>
-        <div class="box">
-            <div class="controls">
-                <span>Excel 预览:</span><div style="flex:1"></div>
-                <button class="action-btn green" onclick="downloadExcel()">📊 下载 Excel (横向页面+完美对齐)</button>
-            </div>
-            <div id="excel-preview" class="preview-area"></div>
-        </div>
+        <textarea id="excel-input" oninput="renderExcel()" placeholder="请粘贴包含表格的 Markdown..."></textarea>
     </div>
-
-    <!-- 3. 双语分离 -->
-    <div id="workspace-split" class="workspace">
-        <div class="box">
-            <div class="controls">
-                <span>粘贴双语 Markdown:</span><div style="flex:1"></div>
-                <button class="action-btn clear" onclick="clearContent('split')">清空</button>
-            </div>
-            <textarea id="split-input" oninput="renderSplit()" placeholder="请粘贴双语内容..."></textarea>
+    <div class="box">
+        <div class="controls">
+            <span>Excel 预览:</span><div style="flex:1"></div>
+            <span id="xlsx-lib-status" class="lib-status"></span>
+            <button class="action-btn green" onclick="downloadExcel()">📊 下载 Excel (.xlsx)</button>
         </div>
-        <div class="box">
-            <div class="controls">
-                <span>预览:</span><div style="flex:1"></div>
-                <button class="action-btn purple" onclick="downloadSplitWord()">📥 下载双语分离文档</button>
-            </div>
-            <div id="split-preview" class="preview-area word-style"></div>
-        </div>
+        <div id="excel-preview" class="preview-area"></div>
     </div>
+</div>
 
-    <!-- 4. HTML -->
-    <div id="workspace-html" class="workspace">
-        <div class="box">
-            <div class="controls">
-                <span>粘贴 HTML 代码:</span><div style="flex:1"></div>
-                <button class="action-btn clear" onclick="clearContent('html')">清空</button>
-            </div>
-            <textarea id="html-input" oninput="renderHtml()" placeholder="请粘贴 HTML 源代码..."></textarea>
+<!-- 3. 双语分离 -->
+<div id="workspace-split" class="workspace">
+    <div class="box">
+        <div class="controls">
+            <span>粘贴双语 Markdown:</span><div style="flex:1"></div>
+            <button class="action-btn clear" onclick="clearContent('split')">清空</button>
         </div>
-        <div class="box">
-            <div class="controls">
-                <span>Word 预览:</span><div style="flex:1"></div>
-                <button class="action-btn orange" onclick="downloadHtmlWord()">📥 下载 Word</button>
-            </div>
-            <div id="html-preview" class="preview-area word-style"></div>
-        </div>
+        <textarea id="split-input" oninput="renderSplit()" placeholder="请粘贴双语内容..."></textarea>
     </div>
-
-    <!-- 5. 双语→英文切割 -->
-    <div id="workspace-voiceover" class="workspace">
-
-        <!-- 顶部横幅 -->
-        <div class="voiceover-banner">
-            <a href="https://app.clipchamp.com/consumer/editor/?feature=voiceover" target="_blank">
-                🎬 打开 Clipchamp 配音编辑器
-            </a>
-            <div class="voice-tip">
-                <strong>🎤 Voice 建议选择：</strong>
-                <div class="voice-badges">
-                    <span class="voice-badge">Andrew</span>
-                    <span class="voice-badge">Ava</span>
-                    <span class="voice-badge">Christopher</span>
-                    <span class="voice-badge">Sonia</span>
-                    <span class="voice-badge">Ryan</span>
-                    <span class="voice-badge">Sonia</span>
-                </div>
-            </div>
+    <div class="box">
+        <div class="controls">
+            <span>预览:</span><div style="flex:1"></div>
+            <button class="action-btn purple" onclick="downloadSplitWord()">📥 下载双语分离文档 (.docx)</button>
         </div>
+        <div id="split-preview" class="preview-area word-style"></div>
+    </div>
+</div>
 
-        <!-- 主体区域 -->
-        <div class="voiceover-main">
-            <!-- 左侧输入 -->
-            <div class="box vo-input-box" style="max-width: 420px; min-width: 300px;">
-                <div class="controls">
-                    <span>粘贴双语文章:</span>
-                    <div style="flex:1"></div>
-                    <button class="action-btn clear" onclick="clearVoiceover()">清空</button>
-                </div>
-                <textarea id="voiceover-input" oninput="processVoiceover()" 
-                    placeholder="粘贴双语文章（中英混合）...&#10;&#10;将自动提取纯英文并按不超过 7650 字符切割（以完整句子结尾）。"
-                    style="flex:1; min-height: 300px;"></textarea>
-                <div style="margin-top: 12px; font-size: 12px; color: #888; line-height: 1.6;">
-                    每段上限 <strong>7,650</strong> 字符 · 按句子边界切割
-                </div>
-            </div>
+<!-- 4. HTML -->
+<div id="workspace-html" class="workspace">
+    <div class="box">
+        <div class="controls">
+            <span>粘贴 HTML 代码:</span><div style="flex:1"></div>
+            <button class="action-btn clear" onclick="clearContent('html')">清空</button>
+        </div>
+        <textarea id="html-input" oninput="renderHtml()" placeholder="请粘贴 HTML 源代码..."></textarea>
+    </div>
+    <div class="box">
+        <div class="controls">
+            <span>Word 预览:</span><div style="flex:1"></div>
+            <button class="action-btn orange" onclick="downloadHtmlWord()">📥 下载 Word (.docx)</button>
+        </div>
+        <div id="html-preview" class="preview-area word-style"></div>
+    </div>
+</div>
 
-            <!-- 右侧切割结果 -->
-            <div class="box" style="flex: 2; overflow: hidden; display: flex; flex-direction: column;">
-                <div class="controls">
-                    <span>切割结果 <span id="chunk-total-info" style="color:#0078d4; font-weight:bold;"></span>:</span>
-                </div>
-                <div id="chunk-count-bar" class="chunk-count-bar"></div>
-                <div id="chunks-area" class="chunks-area">
-                    <div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制的英文片段</div>
-                </div>
+<!-- 5. 双语→英文切割 -->
+<div id="workspace-voiceover" class="workspace">
+    <div class="voiceover-banner">
+        <a href="https://app.clipchamp.com/consumer/editor/?feature=voiceover" target="_blank">
+            🎬 打开 Clipchamp 配音编辑器
+        </a>
+        <div class="voice-tip">
+            <strong>🎤 Voice 建议选择：</strong>
+            <div class="voice-badges">
+                <span class="voice-badge">Andrew</span>
+                <span class="voice-badge">Ava</span>
+                <span class="voice-badge">Christopher</span>
+                <span class="voice-badge">Sonia</span>
+                <span class="voice-badge">Ryan</span>
+                <span class="voice-badge">Sonia</span>
             </div>
         </div>
     </div>
+    <div class="voiceover-main">
+        <div class="box vo-input-box" style="max-width:420px; min-width:280px;">
+            <div class="controls">
+                <span>粘贴双语文章:</span>
+                <div style="flex:1"></div>
+                <button class="action-btn clear" onclick="clearVoiceover()">清空</button>
+            </div>
+            <textarea id="voiceover-input" oninput="processVoiceover()"
+                placeholder="粘贴双语文章（中英混合）...&#10;&#10;将自动提取纯英文，按不超过 7650 字符（完整句子）切割。"
+                style="flex:1; min-height:300px;"></textarea>
+            <div style="margin-top:10px; font-size:12px; color:#888; line-height:1.6;">
+                每段上限 <strong>7,650</strong> 字符 · 按句子边界切割 · 结果可直接编辑
+            </div>
+        </div>
+        <div class="box" style="flex:2; overflow:hidden; display:flex; flex-direction:column;">
+            <div class="controls">
+                <span>切割结果 <span id="chunk-total-info" style="color:#0078d4; font-weight:bold;"></span>:</span>
+            </div>
+            <div id="chunk-count-bar" class="chunk-count-bar"></div>
+            <div id="chunks-area" class="chunks-area">
+                <div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制 / 可编辑的英文片段</div>
+            </div>
+        </div>
+    </div>
+</div>
 
-    <script>
-        if (typeof marked === 'undefined') { alert('Marked.js 加载失败，请刷新。'); } else { marked.use({ breaks: true, gfm: true }); }
+<script>
+// ──────────────────────────────────────────────
+// 库状态检测
+// ──────────────────────────────────────────────
+window.addEventListener('load', function() {
+    var docxOk = typeof htmlDocx !== 'undefined';
+    var xlsxOk = typeof XLSX !== 'undefined';
 
-        function switchTab(type, btnElement) {
-            var buttons = document.getElementsByClassName('tab-btn');
-            for (var i = 0; i < buttons.length; i++) buttons[i].classList.remove('active');
-            btnElement.classList.add('active');
-            var workspaces = document.getElementsByClassName('workspace');
-            for (var j = 0; j < workspaces.length; j++) workspaces[j].classList.remove('show');
-            document.getElementById('workspace-' + type).classList.add('show');
+    var ds = document.getElementById('docx-lib-status');
+    if (ds) { ds.textContent = docxOk ? '✅ docx 库已就绪' : '⚠️ docx 库加载失败'; ds.className = 'lib-status ' + (docxOk ? 'lib-ok' : 'lib-err'); }
+
+    var xs = document.getElementById('xlsx-lib-status');
+    if (xs) { xs.textContent = xlsxOk ? '✅ xlsx 库已就绪' : '⚠️ xlsx 库加载失败'; xs.className = 'lib-status ' + (xlsxOk ? 'lib-ok' : 'lib-err'); }
+
+    if (typeof marked !== 'undefined') { marked.use({ breaks: true, gfm: true }); }
+    else { alert('Marked.js 加载失败，请刷新。'); }
+});
+
+// ──────────────────────────────────────────────
+// 通用工具
+// ──────────────────────────────────────────────
+function switchTab(type, btnElement) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btnElement.classList.add('active');
+    document.querySelectorAll('.workspace').forEach(w => w.classList.remove('show'));
+    document.getElementById('workspace-' + type).classList.add('show');
+}
+
+function clearContent(type) {
+    document.getElementById(type + '-input').value = '';
+    ({word: renderWord, excel: renderExcel, split: renderSplit, html: renderHtml}[type] || function(){})();
+}
+
+function translateMathSymbols(text) {
+    if (!text) return "";
+    return text
+        .replace(/\\times/g, "×").replace(/\\div/g, "÷").replace(/\\star/g, "☆")
+        .replace(/\\le/g, "≤").replace(/\\ge/g, "≥").replace(/\\neq/g, "≠")
+        .replace(/\\approx/g, "≈").replace(/\\pm/g, "±").replace(/\\cdot/g, "·")
+        .replace(/\$([^\$]+)\$/g, (_, c) => c);
+}
+
+function stripHorizontalLines(html) {
+    return html
+        .replace(/<hr\s*\/?>/gi, "")
+        .replace(/<\/hr>/gi, "")
+        .replace(/<li>\s*<p>/gi, "<li>")
+        .replace(/<\/p>\s*<\/li>/gi, "</li>");
+}
+
+function disableMarkdownLists(text) {
+    return text.replace(/^(\s*\d+)\./gm, '$1\\.');
+}
+
+function smartExtractEnglish(rawText) {
+    return rawText.split('\n').map(line => {
+        if (!line.trim()) return "";
+        if (/[\u4e00-\u9fa5]/.test(line)) {
+            const eng = (line.replace(/[\u4e00-\u9fa5]/g, '').match(/[a-zA-Z]/g) || []).length;
+            if (eng < 5) return null;
+            return line
+                .replace(/[\u4e00-\u9fa5]|[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]/g, '')
+                .replace(/\(\s*\)/g, '').replace(/\s+/g, ' ')
+                .replace(/\*\*\s+/g, '**').replace(/\s+\*\*/g, '**').trim();
         }
+        return line;
+    }).filter(l => l !== null).join('\n');
+}
 
-        function clearContent(type) {
-            document.getElementById(type + '-input').value = '';
-            if(type === 'split') renderSplit();
-            else if(type === 'word') renderWord();
-            else if(type === 'excel') renderExcel();
-            else if(type === 'html') renderHtml();
-        }
+// ──────────────────────────────────────────────
+// 构建完整 HTML 文档供 html-docx-js 使用
+// ──────────────────────────────────────────────
+function buildFullHtml(bodyContent) {
+    return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body { font-family: Calibri, '宋体', sans-serif; font-size: 14pt; line-height: 1.6; margin: 2.54cm; }
+  p, li, div { font-size: 14pt; line-height: 150%; margin-bottom: 10pt; text-align: left; }
+  strong { font-weight: bold; }
+  h1, h2, h3, h4, h5 { color: #2E74B5; margin-bottom: 15pt; }
+  hr { display: none !important; }
+  table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+  td, th { border: 1px solid #000; padding: 8px; font-size: 14pt; }
+  th { background-color: #f2f2f2; font-weight: bold; }
+</style>
+</head><body>${bodyContent}</body></html>`;
+}
 
-        function translateMathSymbols(text) {
-            if(!text) return "";
-            text = text.replace(/\\times/g, "×");
-            text = text.replace(/\\div/g, "÷");
-            text = text.replace(/\\star/g, "☆"); 
-            text = text.replace(/\\le/g, "≤");
-            text = text.replace(/\\ge/g, "≥");
-            text = text.replace(/\\neq/g, "≠");
-            text = text.replace(/\\approx/g, "≈");
-            text = text.replace(/\\pm/g, "±");
-            text = text.replace(/\\cdot/g, "·");
-            text = text.replace(/\$([^\$]+)\$/g, function(match, content){
-                return content;
-            });
-            return text;
-        }
+// ──────────────────────────────────────────────
+// 下载真实 .docx
+// ──────────────────────────────────────────────
+function downloadDocx(bodyContent, filename) {
+    if (typeof htmlDocx === 'undefined') {
+        alert('html-docx-js 库未加载！请检查网络连接后刷新页面。');
+        return;
+    }
+    var fullHtml = buildFullHtml(bodyContent);
+    var blob = htmlDocx.asBlob(fullHtml, {
+        orientation: 'portrait',
+        margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+    });
+    triggerDownload(blob, filename.replace(/\.doc$/, '.docx'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+}
 
-        function stripHorizontalLines(html) {
-            let clean = html.replace(/<hr\s*\/?>/gi, "").replace(/<\/hr>/gi, "");
-            clean = clean.replace(/<li>\s*<p>/gi, "<li>").replace(/<\/p>\s*<\/li>/gi, "</li>");
-            return clean;
-        }
+// ──────────────────────────────────────────────
+// 下载真实 .xlsx（支持多 Sheet）
+// ──────────────────────────────────────────────
+function downloadXlsx(tableElements, sheetNames, filename) {
+    if (typeof XLSX === 'undefined') {
+        alert('SheetJS 库未加载！请检查网络连接后刷新页面。');
+        return;
+    }
+    var wb = XLSX.utils.book_new();
 
-        function disableMarkdownLists(text) {
-            return text.replace(/^(\s*\d+)\./gm, '$1\\.');
-        }
+    tableElements.forEach(function(table, i) {
+        var ws = XLSX.utils.table_to_sheet(table, { raw: false });
 
-        function smartExtractEnglish(rawText) {
-            const lines = rawText.split('\n');
-            const processedLines = lines.map(line => {
-                const trimmed = line.trim();
-                if (!trimmed) return ""; 
-                const hasChinese = /[\u4e00-\u9fa5]/.test(line);
-                if (hasChinese) {
-                    let tempLine = line.replace(/[\u4e00-\u9fa5]/g, "");
-                    const englishLetterCount = (tempLine.match(/[a-zA-Z]/g) || []).length;
-                    if (englishLetterCount < 5) { return null; } 
-                    else {
-                        let cleaned = line.replace(/[\u4e00-\u9fa5]|[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]/g, "");
-                        cleaned = cleaned.replace(/\(\s*\)/g, ""); 
-                        cleaned = cleaned.replace(/\s+/g, " ");
-                        cleaned = cleaned.replace(/\*\*\s+/g, "**").replace(/\s+\*\*/g, "**"); 
-                        return cleaned.trim();
-                    }
+        // 设置列宽（估算）
+        var range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        var colWidths = [];
+        for (var c = range.s.c; c <= range.e.c; c++) {
+            var maxLen = 10;
+            for (var r = range.s.r; r <= range.e.r; r++) {
+                var addr = XLSX.utils.encode_cell({ r: r, c: c });
+                var cell = ws[addr];
+                if (cell && cell.v) {
+                    var len = String(cell.v).length;
+                    if (len > maxLen) maxLen = len;
                 }
-                return line;
-            });
-            return processedLines.filter(line => line !== null).join('\n');
+            }
+            colWidths.push({ wch: Math.min(maxLen + 4, 60) });
         }
+        ws['!cols'] = colWidths;
 
-        // --- 1. Word ---
-        function renderWord() {
-            let input = document.getElementById('word-input').value;
-            input = translateMathSymbols(input);
-            let noListInput = disableMarkdownLists(input);
-            let html = marked.parse(noListInput);
-            html = stripHorizontalLines(html);
-            document.getElementById('word-preview').innerHTML = html;
-        }
-        function downloadWord(type) {
-            const content = document.getElementById('word-preview').innerHTML;
-            downloadWordContent(content, "AI_Article.doc");
-        }
+        // 居中格式：表头行 + 第一列
+        var headerStyle = { font: { bold: true }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, fill: { fgColor: { rgb: 'F2F2F2' } } };
+        var centerStyle = { alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
+        var leftStyle   = { alignment: { horizontal: 'left',   vertical: 'center', wrapText: true } };
 
-        // --- 2. Excel ---
-        function renderExcel() {
-            let input = document.getElementById('excel-input').value;
-            input = translateMathSymbols(input);
-            document.getElementById('excel-preview').innerHTML = marked.parse(input);
-        }
-
-        function downloadExcel() {
-            let rawHtml = document.getElementById('excel-preview').innerHTML;
-            let tempDiv = document.createElement('div');
-            tempDiv.innerHTML = rawHtml;
-            let tables = tempDiv.querySelectorAll('table');
-            if (tables.length === 0) { alert("未检测到表格，请确保输入内容包含 Markdown 表格！"); return; }
-            tables.forEach(table => {
-                table.setAttribute('border', '1');
-                table.style.borderCollapse = 'collapse';
-                table.style.width = '100%';
-                table.style.marginBottom = '20px';
-                let rows = table.querySelectorAll('tr');
-                rows.forEach((row) => {
-                    let cells = row.querySelectorAll('td, th');
-                    cells.forEach((cell, index) => {
-                        let textAlign = 'left';
-                        if (cell.tagName === 'TH' || index === 0) { textAlign = 'center'; }
-                        cell.setAttribute('style', 
-                            'mso-number-format:"\@"; border: 0.5pt solid #000; padding: 10px; vertical-align: middle; text-align: ' + textAlign + '; font-size: 14pt; font-family: "宋体";'
-                        );
-                    });
-                });
-            });
-            let headers = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
-            headers.forEach(header => { header.style.color = '#2E74B5'; header.style.fontFamily = 'Microsoft YaHei'; });
-            const header = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/><x:PageSetup><x:Layout x:Orientation="Landscape"/><x:CenterHorizontally/></x:PageSetup><x:Print><x:ValidPrinterInfo/><x:PaperSizeIndex>9</x:PaperSizeIndex><x:Scale>100</x:Scale></x:Print></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--><style>br { mso-data-placement:same-cell; } @page { mso-page-orientation: landscape; }</style></head><body>${tempDiv.innerHTML}</body></html>`;
-            downloadFile(header, 'AI_Complete_Table.xls', 'application/vnd.ms-excel');
-        }
-
-        // --- 3. Split ---
-        function renderSplit() {
-            let rawText = document.getElementById('split-input').value;
-            rawText = translateMathSymbols(rawText);
-            let englishText = smartExtractEnglish(rawText);
-            let noListEnglish = disableMarkdownLists(englishText);
-            let noListRaw = disableMarkdownLists(rawText);
-            let htmlPart1 = stripHorizontalLines(marked.parse(noListEnglish));
-            let htmlPart2 = stripHorizontalLines(marked.parse(noListRaw));
-            const previewHTML = `${htmlPart1}<div class="page-break-line"></div>${htmlPart2}`;
-            document.getElementById('split-preview').innerHTML = previewHTML;
-        }
-        function downloadSplitWord() {
-            let rawText = document.getElementById('split-input').value;
-            rawText = translateMathSymbols(rawText);
-            let englishText = smartExtractEnglish(rawText);
-            let noListEnglish = disableMarkdownLists(englishText);
-            let noListRaw = disableMarkdownLists(rawText);
-            let htmlPart1 = stripHorizontalLines(marked.parse(noListEnglish));
-            let htmlPart2 = stripHorizontalLines(marked.parse(noListRaw));
-            const combinedContent = `${htmlPart1}<br style="page-break-before: always; mso-break-type: section-break" />${htmlPart2}`;
-            downloadWordContent(combinedContent, "Bilingual_Split_Doc.doc");
-        }
-
-        // --- 4. HTML ---
-        function renderHtml() {
-            const input = document.getElementById('html-input').value;
-            document.getElementById('html-preview').innerHTML = input;
-        }
-        function downloadHtmlWord() {
-            const content = document.getElementById('html-preview').innerHTML;
-            downloadWordContent(content, "HTML_to_Doc.doc");
-        }
-
-        // ======================================================
-        // ★★★ 5. 双语→英文切割 核心逻辑 ★★★
-        // ======================================================
-        const MAX_CHUNK = 7650;
-
-        function clearVoiceover() {
-            document.getElementById('voiceover-input').value = '';
-            processVoiceover();
-        }
-
-        function extractPureEnglish(rawText) {
-            // 逐行处理：移除中文行，提取中英混合行的英文部分
-            const lines = rawText.split('\n');
-            const result = [];
-            for (let line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) { result.push(''); continue; }
-
-                const hasChinese = /[\u4e00-\u9fa5]/.test(line);
-                if (!hasChinese) {
-                    // 纯英文行，保留（去掉Markdown标记符）
-                    let clean = line
-                        .replace(/^#+\s*/g, '')       // 去掉标题 #
-                        .replace(/\*\*/g, '')           // 去掉加粗
-                        .replace(/\*/g, '')             // 去掉斜体
-                        .replace(/^[-*]\s+/g, '')       // 去掉列表符号
-                        .replace(/^\d+\.\s+/g, '')      // 去掉数字列表
-                        .trim();
-                    if (clean) result.push(clean);
+        for (var r2 = range.s.r; r2 <= range.e.r; r2++) {
+            for (var c2 = range.s.c; c2 <= range.e.c; c2++) {
+                var addr2 = XLSX.utils.encode_cell({ r: r2, c: c2 });
+                if (!ws[addr2]) ws[addr2] = { t: 's', v: '' };
+                if (r2 === 0) {
+                    ws[addr2].s = headerStyle;
+                } else if (c2 === 0) {
+                    ws[addr2].s = centerStyle;
                 } else {
-                    // 中英混合行，提取英文
-                    let tempLine = line.replace(/[\u4e00-\u9fa5]/g, '');
-                    const englishLetterCount = (tempLine.match(/[a-zA-Z]/g) || []).length;
-                    if (englishLetterCount >= 5) {
-                        let cleaned = line
-                            .replace(/[\u4e00-\u9fa5]/g, '')
-                            .replace(/[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b\uff01]/g, '')
-                            .replace(/^#+\s*/g, '')
-                            .replace(/\*\*/g, '')
-                            .replace(/\*/g, '')
-                            .replace(/^[-*]\s+/g, '')
-                            .replace(/^\d+\.\s+/g, '')
-                            .replace(/\(\s*\)/g, '')
-                            .replace(/\s+/g, ' ')
-                            .trim();
-                        if (cleaned) result.push(cleaned);
-                    }
-                    // 纯中文行（英文字母 < 5）直接跳过
+                    ws[addr2].s = leftStyle;
                 }
             }
-            // 合并为段落，去掉多余空行
-            return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
         }
 
-        function splitIntoSentences(text) {
-            // 将文本按句子边界分割，返回句子数组
-            // 处理常见英文句子结束符：. ! ? 后跟空格或换行
-            const raw = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-            // 使用正则匹配句子（保留分隔符）
-            const sentences = [];
-            // 切分：以 . ! ? 结尾（考虑引号、括号）
-            const re = /[^.!?]*(?:[.!?](?:["')\]]*(?:\s|$)))/g;
-            let match;
-            let lastIndex = 0;
-            while ((match = re.exec(raw)) !== null) {
-                const s = match[0].trim();
-                if (s) sentences.push(s);
-                lastIndex = re.lastIndex;
-            }
-            // 剩余部分（没有句号结尾的）
-            const remaining = raw.slice(lastIndex).trim();
-            if (remaining) sentences.push(remaining);
-            return sentences.filter(s => s.length > 0);
-        }
+        // 设置横向打印
+        ws['!pageSetup'] = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+        ws['!printOptions'] = { centerHorizontally: true };
 
-        function chunkSentences(sentences, maxLen) {
-            const chunks = [];
-            let current = '';
-            for (let i = 0; i < sentences.length; i++) {
-                const s = sentences[i];
-                const candidate = current ? current + ' ' + s : s;
-                if (candidate.length <= maxLen) {
-                    current = candidate;
-                } else {
-                    // 当前句子本身超过限制（罕见），强制加入
-                    if (!current) {
-                        chunks.push(s);
-                    } else {
-                        chunks.push(current);
-                        current = s;
-                    }
-                }
+        var name = sheetNames[i] || ('Sheet' + (i + 1));
+        // Sheet 名不能超过31字符且不能有特殊符号
+        name = name.replace(/[:\\\/\?\*\[\]]/g, '').substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, name);
+    });
+
+    var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
+    var blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    triggerDownload(blob, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
+function triggerDownload(blob, filename, mime) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+}
+
+// ──────────────────────────────────────────────
+// 1. 普通 Word
+// ──────────────────────────────────────────────
+function renderWord() {
+    var input = translateMathSymbols(document.getElementById('word-input').value);
+    var html = stripHorizontalLines(marked.parse(disableMarkdownLists(input)));
+    document.getElementById('word-preview').innerHTML = html;
+}
+function downloadWord() {
+    downloadDocx(document.getElementById('word-preview').innerHTML, 'AI_Article.docx');
+}
+
+// ──────────────────────────────────────────────
+// 2. Excel（多 Sheet 支持）
+// ──────────────────────────────────────────────
+function renderExcel() {
+    var input = translateMathSymbols(document.getElementById('excel-input').value);
+    document.getElementById('excel-preview').innerHTML = marked.parse(input);
+}
+
+function downloadExcel() {
+    var previewEl = document.getElementById('excel-preview');
+    var tables = previewEl.querySelectorAll('table');
+    if (tables.length === 0) { alert("未检测到表格，请确保输入内容包含 Markdown 表格！"); return; }
+
+    // 提取每个表格前的标题作为 Sheet 名
+    var sheetNames = [];
+    tables.forEach(function(table) {
+        var prev = table.previousElementSibling;
+        var name = 'Sheet' + (sheetNames.length + 1);
+        while (prev) {
+            if (/^H[1-6]$/.test(prev.tagName)) { name = prev.textContent.trim().substring(0, 31); break; }
+            prev = prev.previousElementSibling;
+        }
+        sheetNames.push(name);
+    });
+
+    downloadXlsx(Array.from(tables), sheetNames, 'AI_Complete_Table.xlsx');
+}
+
+// ──────────────────────────────────────────────
+// 3. 双语分离
+// ──────────────────────────────────────────────
+function renderSplit() {
+    var rawText = translateMathSymbols(document.getElementById('split-input').value);
+    var englishText = smartExtractEnglish(rawText);
+    var htmlPart1 = stripHorizontalLines(marked.parse(disableMarkdownLists(englishText)));
+    var htmlPart2 = stripHorizontalLines(marked.parse(disableMarkdownLists(rawText)));
+    document.getElementById('split-preview').innerHTML = htmlPart1 + '<div class="page-break-line"></div>' + htmlPart2;
+}
+function downloadSplitWord() {
+    var rawText = translateMathSymbols(document.getElementById('split-input').value);
+    var englishText = smartExtractEnglish(rawText);
+    var htmlPart1 = stripHorizontalLines(marked.parse(disableMarkdownLists(englishText)));
+    var htmlPart2 = stripHorizontalLines(marked.parse(disableMarkdownLists(rawText)));
+    var combined = htmlPart1 + '<p style="page-break-before:always;"></p>' + htmlPart2;
+    downloadDocx(combined, 'Bilingual_Split_Doc.docx');
+}
+
+// ──────────────────────────────────────────────
+// 4. HTML 转 Word
+// ──────────────────────────────────────────────
+function renderHtml() {
+    document.getElementById('html-preview').innerHTML = document.getElementById('html-input').value;
+}
+function downloadHtmlWord() {
+    downloadDocx(document.getElementById('html-preview').innerHTML, 'HTML_to_Doc.docx');
+}
+
+// ──────────────────────────────────────────────
+// 5. 双语→英文切割
+// ──────────────────────────────────────────────
+var MAX_CHUNK = 7650;
+
+function clearVoiceover() {
+    var ta = document.getElementById('voiceover-input');
+    ta.value = '';
+    processVoiceover();
+}
+
+function extractPureEnglish(rawText) {
+    var lines = rawText.split('\n');
+    var result = [];
+    lines.forEach(function(line) {
+        var trimmed = line.trim();
+        if (!trimmed) { result.push(''); return; }
+        var hasChinese = /[\u4e00-\u9fa5]/.test(line);
+        if (!hasChinese) {
+            var clean = line
+                .replace(/^#+\s*/g, '').replace(/\*\*/g, '').replace(/\*/g, '')
+                .replace(/^[-*]\s+/g, '').replace(/^\d+\.\s+/g, '').trim();
+            if (clean) result.push(clean);
+        } else {
+            var engCount = (line.replace(/[\u4e00-\u9fa5]/g, '').match(/[a-zA-Z]/g) || []).length;
+            if (engCount >= 5) {
+                var cleaned = line
+                    .replace(/[\u4e00-\u9fa5]/g, '')
+                    .replace(/[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b\uff01]/g, '')
+                    .replace(/^#+\s*/g, '').replace(/\*\*/g, '').replace(/\*/g, '')
+                    .replace(/^[-*]\s+/g, '').replace(/^\d+\.\s+/g, '')
+                    .replace(/\(\s*\)/g, '').replace(/\s+/g, ' ').trim();
+                if (cleaned) result.push(cleaned);
             }
+        }
+    });
+    return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function splitIntoSentences(text) {
+    var raw = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+    var sentences = [];
+    var re = /[^.!?]*(?:[.!?](?:["')\]]*(?:\s|$)))/g;
+    var match, lastIndex = 0;
+    while ((match = re.exec(raw)) !== null) {
+        var s = match[0].trim();
+        if (s) sentences.push(s);
+        lastIndex = re.lastIndex;
+    }
+    var remaining = raw.slice(lastIndex).trim();
+    if (remaining) sentences.push(remaining);
+    return sentences.filter(function(s){ return s.length > 0; });
+}
+
+function chunkSentences(sentences, maxLen) {
+    var chunks = [], current = '';
+    sentences.forEach(function(s) {
+        var candidate = current ? current + ' ' + s : s;
+        if (candidate.length <= maxLen) {
+            current = candidate;
+        } else {
             if (current) chunks.push(current);
-            return chunks;
+            current = s.length > maxLen ? s : s; // 单句超限也放进去
         }
+    });
+    if (current) chunks.push(current);
+    return chunks;
+}
 
-        function processVoiceover() {
-            const raw = document.getElementById('voiceover-input').value;
-            const chunksArea = document.getElementById('chunks-area');
-            const totalInfo = document.getElementById('chunk-total-info');
-            const countBar = document.getElementById('chunk-count-bar');
+function processVoiceover() {
+    var raw = document.getElementById('voiceover-input').value;
+    var chunksArea = document.getElementById('chunks-area');
+    var totalInfo = document.getElementById('chunk-total-info');
+    var countBar  = document.getElementById('chunk-count-bar');
 
-            if (!raw.trim()) {
-                chunksArea.innerHTML = '<div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制的英文片段</div>';
-                totalInfo.textContent = '';
-                countBar.classList.remove('show');
-                return;
-            }
+    if (!raw.trim()) {
+        chunksArea.innerHTML = '<div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制 / 可编辑的英文片段</div>';
+        totalInfo.textContent = '';
+        countBar.classList.remove('show');
+        return;
+    }
 
-            // 1. 提取纯英文
-            const englishText = extractPureEnglish(raw);
-            if (!englishText) {
-                chunksArea.innerHTML = '<div class="empty-hint">⚠️ 未提取到英文内容，请检查输入。</div>';
-                totalInfo.textContent = '';
-                countBar.classList.remove('show');
-                return;
-            }
+    var englishText = extractPureEnglish(raw);
+    if (!englishText) {
+        chunksArea.innerHTML = '<div class="empty-hint">⚠️ 未提取到英文内容，请检查输入。</div>';
+        totalInfo.textContent = '';
+        countBar.classList.remove('show');
+        return;
+    }
 
-            // 2. 切割句子
-            const sentences = splitIntoSentences(englishText);
+    var sentences = splitIntoSentences(englishText);
+    var chunks    = chunkSentences(sentences, MAX_CHUNK);
 
-            // 3. 组合成不超过 MAX_CHUNK 的块
-            const chunks = chunkSentences(sentences, MAX_CHUNK);
+    totalInfo.textContent = '共 ' + chunks.length + ' 段';
+    countBar.textContent  = '✅ 英文总字符：' + englishText.length + ' | 已切割为 ' + chunks.length + ' 段（每段上限 ' + MAX_CHUNK + ' 字符）';
+    countBar.classList.add('show');
 
-            // 4. 渲染
-            totalInfo.textContent = `共 ${chunks.length} 段`;
-            countBar.textContent = `✅ 英文总字符：${englishText.length} | 已切割为 ${chunks.length} 段（每段上限 ${MAX_CHUNK} 字符）`;
-            countBar.classList.add('show');
+    chunksArea.innerHTML = '';
+    chunks.forEach(function(chunk, idx) {
+        var len = chunk.length;
+        var isNear = len > 7000;
 
-            chunksArea.innerHTML = '';
-            chunks.forEach((chunk, idx) => {
-                const len = chunk.length;
-                const isNearLimit = len > 7000;
-                const block = document.createElement('div');
-                block.className = 'chunk-block';
-                block.innerHTML = `
-                    <div class="chunk-header">
-                        <span class="chunk-label">📄 第 ${idx + 1} 段</span>
-                        <span class="chunk-meta ${isNearLimit ? 'warn' : ''}">${len.toLocaleString()} 字符${isNearLimit ? ' ⚠️ 接近上限' : ''}</span>
-                    </div>
-                    <textarea class="chunk-textarea" readonly id="chunk-${idx}">${escapeHtmlAttr(chunk)}</textarea>
-                    <div class="chunk-footer">
-                        <button class="copy-btn" id="copy-btn-${idx}" onclick="copyChunk(${idx})">
-                            📋 复制此段
-                        </button>
-                    </div>
-                `;
-                chunksArea.appendChild(block);
-            });
-        }
+        var block = document.createElement('div');
+        block.className = 'chunk-block';
 
-        function escapeHtmlAttr(str) {
-            return str
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;');
-        }
+        var safeChunk = chunk.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-        function copyChunk(idx) {
-            const ta = document.getElementById('chunk-' + idx);
-            const btn = document.getElementById('copy-btn-' + idx);
-            if (!ta) return;
-            navigator.clipboard.writeText(ta.value).then(() => {
-                btn.textContent = '✅ 已复制！';
-                btn.classList.add('copied');
-                setTimeout(() => {
-                    btn.innerHTML = '📋 复制此段';
-                    btn.classList.remove('copied');
-                }, 2000);
-            }).catch(() => {
-                // 降级方案
-                ta.select();
-                document.execCommand('copy');
-                btn.textContent = '✅ 已复制！';
-                btn.classList.add('copied');
-                setTimeout(() => {
-                    btn.innerHTML = '📋 复制此段';
-                    btn.classList.remove('copied');
-                }, 2000);
-            });
-        }
+        block.innerHTML =
+            '<div class="chunk-header">' +
+                '<span class="chunk-label">📄 第 ' + (idx+1) + ' 段</span>' +
+                '<span class="chunk-meta' + (isNear ? ' warn' : '') + '" id="meta-' + idx + '">' +
+                    len.toLocaleString() + ' 字符' + (isNear ? ' ⚠️ 接近上限' : '') +
+                '</span>' +
+            '</div>' +
+            '<textarea class="chunk-textarea" id="chunk-' + idx + '" ' +
+                'oninput="updateChunkMeta(' + idx + ')">' + safeChunk + '</textarea>' +
+            '<div class="chunk-footer">' +
+                '<span class="char-live" id="char-live-' + idx + '">编辑后字符数将实时更新</span>' +
+                '<button class="copy-btn" id="copy-btn-' + idx + '" onclick="copyChunk(' + idx + ')">📋 复制此段</button>' +
+            '</div>';
 
-        // --- Download Helpers ---
-        function downloadWordContent(htmlContent, filename) {
-            const header = `
-                <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-                <head><meta charset='utf-8'>
-                <xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml>
-                <style>
-                    @page { size: 21cm 29.7cm; margin: 2.54cm 2.54cm; }
-                    body { font-family: 'Calibri', 'Times New Roman', '宋体'; }
-                    p, li, div, table { text-align: left; font-size: 14pt; line-height: 150%; margin-bottom: 10pt; }
-                    strong { font-weight: bold; }
-                    h1, h2, h3, h4, h5 { color: #2E74B5; margin-bottom: 15pt; border-bottom: none !important; text-decoration: none !important; }
-                    hr { display: none !important; border: none !important; height: 0 !important; }
-                    table { border-collapse: collapse; width: 100%; margin: 15px 0; }
-                    td, th { border: 1px solid #000; padding: 8px; font-size: 14pt; }
-                </style></head><body>${htmlContent}</body></html>`;
-            downloadFile(header, filename, 'application/msword');
-        }
+        chunksArea.appendChild(block);
+    });
+}
 
-        function downloadFile(content, filename, mimeType) {
-            const blob = new Blob(['\ufeff', content], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-    </script>
+function updateChunkMeta(idx) {
+    var ta  = document.getElementById('chunk-' + idx);
+    var meta = document.getElementById('meta-' + idx);
+    var live = document.getElementById('char-live-' + idx);
+    if (!ta || !meta) return;
+    var len = ta.value.length;
+    var isNear = len > 7000;
+    meta.textContent = len.toLocaleString() + ' 字符' + (isNear ? ' ⚠️ 接近上限' : '');
+    meta.className = 'chunk-meta' + (isNear ? ' warn' : '');
+    if (live) live.textContent = '（已编辑）' + len.toLocaleString() + ' 字符';
+}
+
+function copyChunk(idx) {
+    var ta  = document.getElementById('chunk-' + idx);
+    var btn = document.getElementById('copy-btn-' + idx);
+    if (!ta) return;
+    navigator.clipboard.writeText(ta.value).then(function() {
+        showCopied(btn);
+    }).catch(function() {
+        ta.select();
+        document.execCommand('copy');
+        showCopied(btn);
+    });
+}
+
+function showCopied(btn) {
+    btn.textContent = '✅ 已复制！';
+    btn.classList.add('copied');
+    setTimeout(function(){ btn.innerHTML = '📋 复制此段'; btn.classList.remove('copied'); }, 2000);
+}
+
+// ── 粘贴后光标回到最前面 ──────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+    var voInput = document.getElementById('voiceover-input');
+    voInput.addEventListener('paste', function() {
+        setTimeout(function() {
+            voInput.setSelectionRange(0, 0);
+            voInput.scrollTop = 0;
+        }, 10);
+    });
+});
+</script>
 </body>
 </html>
