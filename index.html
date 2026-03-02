@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V4.5</title>
+    <title>AI 全能转换神器 V4.8</title>
     <!-- Markdown 解析 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- JSZip：用于 xlsx 分页预览 XML 后处理 -->
@@ -70,7 +70,6 @@
         .word-style h1, .word-style h2, .word-style h3 {
             text-align: left; color: #2E74B5; border-bottom: none !important; text-decoration: none !important;
         }
-        /* hr 在预览里变成换页线；.word-style hr 不再隐藏 */
         /* Excel 预览 */
         #excel-preview table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
         #excel-preview h1, #excel-preview h2, #excel-preview h3, #excel-preview h4 { color: #2E74B5; margin: 20px 0 10px; }
@@ -156,7 +155,7 @@
     <button class="tab-btn" onclick="switchTab('split', this)">🔀 双语分离转 Word</button>
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
-    <span class="version-badge">V4.0</span>
+    <span class="version-badge">V4.5</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -166,7 +165,7 @@
             <span>粘贴 Markdown:</span><div style="flex:1"></div>
             <button class="action-btn clear" onclick="clearContent('word')">清空</button>
         </div>
-        <textarea id="word-input" oninput="renderWord()" placeholder="请粘贴 AI 生成的文章... 注：文章中的 *** 会生成换页符"></textarea>
+        <textarea id="word-input" oninput="renderWord()" placeholder="请粘贴 AI 生成的文章... 注：文章中的 *** 或 &lt;div style=&quot;page-break-after: always;&quot;&gt;&lt;/div&gt; 会生成换页符"></textarea>
     </div>
     <div class="box">
         <div class="controls">
@@ -344,40 +343,27 @@ function smartExtractEnglish(rawText) {
 }
 
 // ══════════════════════════════════════════════════════
-// 文件名提取（修复版）
+// 文件名提取
 // 支持：## 普通标题、## <span ...>3.8 Title 中文</span>
 // 规则：去 HTML 标签 → 去中文 → 去非法字符 → 取英文部分
 // ══════════════════════════════════════════════════════
 function extractEnglishFilename(text) {
     if (!text) return null;
 
-    // 1. 找到第一个 Markdown 标题行或 HTML heading
     var mdMatch   = text.match(/^#{1,6}\s+(.+)/m);
     var htmlMatch = text.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
     var heading   = mdMatch ? mdMatch[1] : (htmlMatch ? htmlMatch[1] : null);
 
     if (!heading) {
-        // fallback：取第一个非空行
         var firstLine = text.trim().split('\n')[0].trim();
         if (firstLine) heading = firstLine; else return null;
     }
 
-    // 2. 去除 HTML 标签（如 <span style="...">）
     heading = heading.replace(/<[^>]+>/g, ' ');
-
-    // 3. 去除 Markdown 格式符
     heading = heading.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '');
-
-    // 4. 去除中文字符及中文标点
     heading = heading.replace(/[\u4e00-\u9fa5\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b\u3010\u3011\uff01]/g, '');
-
-    // 5. 去除文件名非法字符
     heading = heading.replace(/[\\\/:\*\?"<>\|#《》]/g, '');
-
-    // 6. 合并空白，去除首尾
     heading = heading.replace(/\s+/g, ' ').trim();
-
-    // 7. 去除末尾多余标点
     heading = heading.replace(/[\.\s\-_]+$/, '').trim();
 
     return heading.length > 0 ? heading : null;
@@ -385,20 +371,35 @@ function extractEnglishFilename(text) {
 
 // ══════════════════════════════════════════════════════
 // HTML 处理辅助函数
-// hrToVisual  : <hr> → 预览用分页线 div
-// hrToPageBreak: <hr> → Word 换页符
-// cleanupList : 修复 <li><p> 嵌套
+//
+// hrToVisual   : <hr> 和 <div style="page-break-after:always"> → 预览用分页线 div
+// hrToPageBreak: <hr> 和 <div style="page-break-after:always"> → Word 换页符
+// cleanupList  : 修复 <li><p> 嵌套
+//
+// 支持 AI 输出的两种分页标记：
+//   *** （Markdown hr）
+//   <div style="page-break-after: always;"></div>
 // ══════════════════════════════════════════════════════
+
+// 匹配 AI 输出的 page-break-after div（兼容单双引号、空格、有无末尾分号）
+var RE_PB_DIV = /<div\s+style=["']page-break-after\s*:\s*always;?["']\s*>\s*<\/div>/gi;
+var MSO_BREAK = '<p style="page-break-before:always;margin:0;padding:0;mso-break-type:page-break;"></p>';
+var VISUAL_BREAK = '<div class="page-break-line"></div>';
+
 function hrToVisual(html) {
     return html
-        .replace(/<hr\s*\/?>/gi, '<div class="page-break-line"></div>')
-        .replace(/<\/hr>/gi, '');
+        .replace(/<hr\s*\/?>/gi, VISUAL_BREAK)
+        .replace(/<\/hr>/gi, '')
+        .replace(RE_PB_DIV, VISUAL_BREAK);
 }
+
 function hrToPageBreak(html) {
     return html
-        .replace(/<hr\s*\/?>/gi, '<p style="page-break-before:always;margin:0;padding:0;mso-break-type:page-break;"></p>')
-        .replace(/<\/hr>/gi, '');
+        .replace(/<hr\s*\/?>/gi, MSO_BREAK)
+        .replace(/<\/hr>/gi, '')
+        .replace(RE_PB_DIV, MSO_BREAK);
 }
+
 function cleanupList(html) {
     return html
         .replace(/<li>\s*<p>/gi, '<li>')
@@ -467,15 +468,6 @@ function mkBorder(hex) {
 
 // ══════════════════════════════════════════════════════
 // ExcelJS：构建单个 Worksheet
-//   titleText      - 合并标题文字
-//   parsed         - tableToArray 返回对象
-//   字体规则：
-//     标题行   → SimSun(宋体) 20pt 加粗
-//     列标题行 → SimSun(宋体) 14pt 加粗
-//     音标列   → Lucida Sans Unicode 14pt
-//     含中文单元格 → SimSun(宋体) 14pt
-//     纯英文单元格 → Times New Roman 14pt
-//     语块列   → 以上基础上加粗
 // ══════════════════════════════════════════════════════
 function buildExcelWorksheet(ws, titleText, parsed) {
     var data           = parsed.data;
@@ -485,16 +477,14 @@ function buildExcelWorksheet(ws, titleText, parsed) {
 
     var hasCN = function (s) { return /[\u4e00-\u9fa5]/.test(s || ''); };
 
-    // ── 页面设置 ──────────────────────────────────
-    ws.pageSetup.orientation       = 'landscape';
-    ws.pageSetup.paperSize         = 9;        // A4
-    ws.pageSetup.fitToPage         = true;
-    ws.pageSetup.fitToWidth        = 1;
-    ws.pageSetup.fitToHeight       = 0;
+    ws.pageSetup.orientation        = 'landscape';
+    ws.pageSetup.paperSize          = 9;
+    ws.pageSetup.fitToPage          = true;
+    ws.pageSetup.fitToWidth         = 1;
+    ws.pageSetup.fitToHeight        = 0;
     ws.pageSetup.horizontalCentered = true;
-    ws.pageSetup.printTitlesRow    = '1:2';    // 标题行 + 列标题行 每页重复
+    ws.pageSetup.printTitlesRow     = '1:2';
 
-    // ── 视图：冻结前2行（分页预览通过 JSZip 后处理注入）──
     ws.views = [{
         state:       'frozen',
         xSplit:      0,
@@ -503,7 +493,6 @@ function buildExcelWorksheet(ws, titleText, parsed) {
         zoomScale:   75
     }];
 
-    // ── 标题行（第1行，合并所有列）────────────────
     if (cols > 1) ws.mergeCells(1, 1, 1, cols);
     ws.getRow(1).height = 45;
     var titleCell = ws.getCell(1, 1);
@@ -512,21 +501,18 @@ function buildExcelWorksheet(ws, titleText, parsed) {
     titleCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
     titleCell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDEEAF1' } };
     titleCell.border    = mkBorder('4472C4');
-    // 合并后其余列的边框/填充
     for (var tc = 2; tc <= cols; tc++) {
         var tc_cell = ws.getCell(1, tc);
         tc_cell.fill   = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDEEAF1' } };
         tc_cell.border = mkBorder('4472C4');
     }
 
-    // ── 数据行（第2行起）─────────────────────────
     data.forEach(function (row, rIdx) {
-        var excelRowNum = rIdx + 2;   // 1-indexed；行1=标题，行2=列标题，行3+数据
+        var excelRowNum = rIdx + 2;
         var isHeader    = (rIdx === 0);
         var isAlt       = (!isHeader) && (rIdx % 2 === 0);
         var excelRow    = ws.getRow(excelRowNum);
 
-        // 行高
         if (isHeader) {
             excelRow.height = 30;
         } else {
@@ -544,13 +530,11 @@ function buildExcelWorksheet(ws, titleText, parsed) {
             cell.value = val;
 
             if (isHeader) {
-                // 列标题行
                 cell.font      = { name: 'SimSun', size: 14, bold: true, color: { argb: 'FF1F2D3D' } };
                 cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
                 cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } };
                 cell.border    = mkBorder('2E75B6');
             } else {
-                // 数据行：确定字体名
                 var fontName;
                 if (c === phoneticColIdx) {
                     fontName = 'Lucida Sans Unicode';
@@ -575,7 +559,6 @@ function buildExcelWorksheet(ws, titleText, parsed) {
         }
     });
 
-    // ── 列宽（按内容估算）──────────────────────────
     for (var col = 0; col < cols; col++) {
         var maxW = 8;
         data.forEach(function (row) {
@@ -644,7 +627,7 @@ async function downloadExcel() {
         var fixedSheetNames = ['语块', '单词'];
 
         var workbook = new ExcelJS.Workbook();
-        workbook.creator  = 'AI 全能转换神器 V4.0';
+        workbook.creator  = 'AI 全能转换神器 V4.5';
         workbook.created  = new Date();
 
         var tableArray = Array.from(tables);
@@ -652,7 +635,6 @@ async function downloadExcel() {
         tableArray.forEach(function (table, i) {
             var parsed = tableToArray(table);
 
-            // 找前面最近的标题作为 Sheet 标题文字
             var titleText = '';
             var prev = table.previousElementSibling;
             while (prev) {
@@ -668,10 +650,8 @@ async function downloadExcel() {
             buildExcelWorksheet(ws, titleText, parsed);
         });
 
-        // ── 生成 Buffer ───────────────────────────
         var buffer = await workbook.xlsx.writeBuffer();
 
-        // ── JSZip 后处理：注入 view="pageBreakPreview" ──
         if (typeof JSZip !== 'undefined') {
             try {
                 var zip = await JSZip.loadAsync(buffer);
@@ -681,7 +661,6 @@ async function downloadExcel() {
                 for (var i = 0; i < sheetFiles.length; i++) {
                     var fname = sheetFiles[i];
                     var xml = await zip.file(fname).async('text');
-                    // 在 <sheetView 上加 view="pageBreakPreview"（若尚无 view 属性）
                     xml = xml.replace(/<sheetView\b([^>]*?)>/g, function (match, attrs) {
                         if (attrs.indexOf('view=') === -1) {
                             return '<sheetView view="pageBreakPreview"' + attrs + '>';
@@ -725,9 +704,7 @@ function downloadSplitWord() {
     var englishText = smartExtractEnglish(rawText);
     var htmlPart1   = cleanupList(hrToPageBreak(marked.parse(disableMarkdownLists(englishText))));
     var htmlPart2   = cleanupList(hrToPageBreak(marked.parse(disableMarkdownLists(rawText))));
-    var combined    = htmlPart1 +
-        '<p style="page-break-before:always;margin:0;padding:0;mso-break-type:page-break;"></p>' +
-        htmlPart2;
+    var combined    = htmlPart1 + MSO_BREAK + htmlPart2;
     var engName = extractEnglishFilename(rawText);
     downloadDocx(combined, (engName || 'Bilingual_Split_Doc') + '.docx');
 }
@@ -746,7 +723,7 @@ function downloadHtmlWord() {
 }
 
 // ══════════════════════════════════════════════════════
-// 5. 双语→英文切割（完整保留，不修改）
+// 5. 双语→英文切割
 // ══════════════════════════════════════════════════════
 var MAX_CHUNK = 7650;
 
@@ -878,7 +855,6 @@ function showCopied(btn) {
     setTimeout(function () { btn.innerHTML = '📋 复制此段'; btn.classList.remove('copied'); }, 2000);
 }
 
-// ── 粘贴后光标回到最前面 ──────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
     var voInput = document.getElementById('voiceover-input');
     voInput.addEventListener('paste', function () {
