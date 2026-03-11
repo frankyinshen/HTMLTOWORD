@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V4.8</title>
+    <title>AI 全能转换神器 V5.8</title>
     <!-- Markdown 解析 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- JSZip：用于 xlsx 分页预览 XML 后处理 -->
@@ -145,6 +145,48 @@
             padding: 10px 16px; margin-bottom: 12px; font-size: 13px; color: #444; display: none;
         }
         .chunk-count-bar.show { display: block; }
+
+        /* ===== 指令合成 ===== */
+        #workspace-compose {
+            flex-direction: row; height: auto; min-height: 80vh; align-items: flex-start;
+        }
+        .compose-left {
+            flex: 1; display: flex; flex-direction: column; gap: 0;
+            background: white; padding: 20px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-height: 82vh; overflow-y: auto;
+        }
+        .compose-right {
+            flex: 1; display: flex; flex-direction: column;
+            background: white; padding: 20px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-height: 82vh;
+        }
+        .compose-block {
+            margin-bottom: 14px; border: 1px solid #d0ddf0; border-radius: 8px; padding: 14px;
+            background: #f8f9ff;
+        }
+        .compose-block:first-child { background: #f0f7ff; border-color: #a8c8f0; }
+        .compose-block-header {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+        }
+        .compose-block-label { font-weight: bold; font-size: 13px; }
+        .compose-block-label.primary { color: #0078d4; }
+        .compose-block-label.secondary { color: #107C10; }
+        .compose-result-area {
+            flex: 1; width: 100%; resize: none; padding: 15px;
+            font-family: Consolas, monospace; font-size: 13px; line-height: 1.6;
+            border: 1px solid #ccc; border-radius: 4px; background: #fafafa;
+            min-height: 300px;
+        }
+        .compose-status {
+            margin-top: 10px; font-size: 13px; color: #107C10;
+            background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 4px;
+            padding: 8px 14px; display: none;
+        }
+        .compose-tip {
+            font-size: 12px; color: #888; background: #f5f5f5; border-radius: 4px;
+            padding: 8px 12px; margin-bottom: 12px; line-height: 1.7;
+        }
+        .compose-tip strong { color: #0078d4; }
     </style>
 </head>
 <body>
@@ -155,7 +197,8 @@
     <button class="tab-btn" onclick="switchTab('split', this)">🔀 双语分离转 Word</button>
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
-    <span class="version-badge">V4.5</span>
+    <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
+    <span class="version-badge">V5.8</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -272,6 +315,58 @@
                 <div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制 / 可编辑的英文片段</div>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- 6. 指令合成 -->
+<div id="workspace-compose" class="workspace">
+    <!-- 左侧：文本框区 -->
+    <div class="compose-left">
+        <div class="controls" style="margin-bottom:12px;">
+            <span style="font-weight:bold;font-size:15px;">📝 文本框</span>
+            <div style="flex:1"></div>
+            <button class="action-btn green" onclick="addComposeBlock()">➕ 增加文本框</button>
+            <button class="action-btn clear" onclick="clearCompose()">🗑️ 清空重置</button>
+        </div>
+        <div class="compose-tip">
+            <strong>使用方法：</strong>在第 1 段（主模板）中，用 <strong>插入1</strong>、<strong>插入2</strong> 等标记插入位置（可自定义文字）；
+            第 2 段内容将替换"插入1"，第 3 段替换"插入2"，依此类推。<br>
+            点击 <strong>⚡ 合成并复制</strong> 后，结果会显示在右侧并自动复制到剪贴板。
+        </div>
+        <div id="compose-blocks">
+            <!-- Block 0: 主模板 -->
+            <div class="compose-block" id="compose-block-0">
+                <div class="compose-block-header">
+                    <span class="compose-block-label primary">📋 第 1 段 — 主模板（在需要插入的地方写"插入1"、"插入2"…）</span>
+                </div>
+                <textarea class="chunk-textarea" id="compose-text-0"
+                    style="min-height:220px;"
+                    placeholder="粘贴主指令模板。&#10;&#10;在需要插入第 2 段内容的地方，写上：插入1&#10;在需要插入第 3 段内容的地方，写上：插入2&#10;（可根据实际需要自行命名）"></textarea>
+            </div>
+            <!-- Block 1: 第一个插入段 -->
+            <div class="compose-block" id="compose-block-1">
+                <div class="compose-block-header">
+                    <span class="compose-block-label secondary" id="compose-label-1">📄 第 2 段 — 将替换主模板中的「插入1」</span>
+                    <button class="action-btn clear" style="padding:5px 14px;font-size:12px;" onclick="removeComposeBlock('compose-block-1')">🗑️ 删除此段</button>
+                </div>
+                <textarea class="chunk-textarea" id="compose-text-1"
+                    style="min-height:120px;"
+                    placeholder="粘贴要替换「插入1」的文字（保留原始格式）..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：合成结果 -->
+    <div class="compose-right">
+        <div class="controls" style="margin-bottom:12px;">
+            <span style="font-weight:bold;font-size:15px;">⚡ 合成结果</span>
+            <div style="flex:1"></div>
+            <button class="action-btn green" style="padding:10px 28px;font-size:15px;" onclick="synthesizeCompose()">⚡ 合成并复制</button>
+        </div>
+        <textarea id="compose-result" class="compose-result-area"
+            placeholder="点击左上方「⚡ 合成并复制」按钮，合成后的完整指令将显示在这里，并自动复制到剪贴板。"
+            readonly></textarea>
+        <div id="compose-status" class="compose-status"></div>
     </div>
 </div>
 
@@ -627,7 +722,7 @@ async function downloadExcel() {
         var fixedSheetNames = ['语块', '单词'];
 
         var workbook = new ExcelJS.Workbook();
-        workbook.creator  = 'AI 全能转换神器 V4.5';
+        workbook.creator  = 'AI 全能转换神器 V5.8';
         workbook.created  = new Date();
 
         var tableArray = Array.from(tables);
@@ -864,6 +959,161 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 10);
     });
 });
+
+// ══════════════════════════════════════════════════════
+// 6. 指令合成
+// ══════════════════════════════════════════════════════
+
+// 全局计数器，用于生成唯一 id
+var _composeIdCounter = 2;
+
+/**
+ * 重新计算所有文本框的序号标签
+ * Block 0 始终是主模板（不变），Block 1..N 分别对应「插入1」「插入2」...
+ */
+function _refreshComposeLabels() {
+    var blocks = document.querySelectorAll('#compose-blocks .compose-block');
+    blocks.forEach(function (block, i) {
+        var labelEl = block.querySelector('.compose-block-label');
+        if (!labelEl) return;
+        if (i === 0) {
+            labelEl.textContent = '📋 第 1 段 — 主模板（在需要插入的地方写"插入1"、"插入2"…）';
+            labelEl.className = 'compose-block-label primary';
+        } else {
+            labelEl.textContent = '📄 第 ' + (i + 1) + ' 段 — 将替换主模板中的「插入' + i + '」';
+            labelEl.className = 'compose-block-label secondary';
+            // 同步更新 placeholder
+            var ta = block.querySelector('textarea');
+            if (ta) ta.placeholder = '粘贴要替换「插入' + i + '」的文字（保留原始格式）...';
+        }
+    });
+}
+
+/** 增加一个文本框 */
+function addComposeBlock() {
+    var uid = _composeIdCounter++;
+    var container = document.getElementById('compose-blocks');
+    var currentCount = container.querySelectorAll('.compose-block').length; // i = currentCount (0-based after append)
+    var insertNum = currentCount; // 当前段位 N，即替换「插入N」
+
+    var div = document.createElement('div');
+    div.className = 'compose-block';
+    div.id = 'compose-block-' + uid;
+    div.innerHTML =
+        '<div class="compose-block-header">' +
+            '<span class="compose-block-label secondary">📄 第 ' + (currentCount + 1) + ' 段 — 将替换主模板中的「插入' + insertNum + '」</span>' +
+            '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" ' +
+                'onclick="removeComposeBlock(\'compose-block-' + uid + '\')">🗑️ 删除此段</button>' +
+        '</div>' +
+        '<textarea class="chunk-textarea" id="compose-text-' + uid + '" style="min-height:120px;" ' +
+            'placeholder="粘贴要替换「插入' + insertNum + '」的文字（保留原始格式）..."></textarea>';
+    container.appendChild(div);
+    _refreshComposeLabels();
+    // 滚动到底部
+    div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/** 删除指定 id 的文本框（不能删除第 0 块） */
+function removeComposeBlock(blockId) {
+    var block = document.getElementById(blockId);
+    if (!block) return;
+    var container = document.getElementById('compose-blocks');
+    var blocks = container.querySelectorAll('.compose-block');
+    // 第一个 block（主模板）不允许删除
+    if (blocks[0] && blocks[0].id === blockId) {
+        alert('主模板（第 1 段）不能删除。');
+        return;
+    }
+    block.remove();
+    _refreshComposeLabels();
+}
+
+/** 清空所有内容，恢复初始两个文本框 */
+function clearCompose() {
+    var container = document.getElementById('compose-blocks');
+    container.innerHTML =
+        '<div class="compose-block" id="compose-block-0">' +
+            '<div class="compose-block-header">' +
+                '<span class="compose-block-label primary">📋 第 1 段 — 主模板（在需要插入的地方写"插入1"、"插入2"…）</span>' +
+            '</div>' +
+            '<textarea class="chunk-textarea" id="compose-text-0" style="min-height:220px;" ' +
+                'placeholder="粘贴主指令模板。&#10;&#10;在需要插入第 2 段内容的地方，写上：插入1&#10;在需要插入第 3 段内容的地方，写上：插入2&#10;（可根据实际需要自行命名）"></textarea>' +
+        '</div>' +
+        '<div class="compose-block" id="compose-block-1">' +
+            '<div class="compose-block-header">' +
+                '<span class="compose-block-label secondary">📄 第 2 段 — 将替换主模板中的「插入1」</span>' +
+                '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" ' +
+                    'onclick="removeComposeBlock(\'compose-block-1\')">🗑️ 删除此段</button>' +
+            '</div>' +
+            '<textarea class="chunk-textarea" id="compose-text-1" style="min-height:120px;" ' +
+                'placeholder="粘贴要替换「插入1」的文字（保留原始格式）..."></textarea>' +
+        '</div>';
+    _composeIdCounter = 2;
+    document.getElementById('compose-result').value = '';
+    var status = document.getElementById('compose-status');
+    status.style.display = 'none';
+    status.textContent = '';
+}
+
+/**
+ * 合成：把主模板中的「插入N」逐一替换为第 N+1 个文本框的内容，
+ * 结果显示在右侧并复制到剪贴板。
+ */
+function synthesizeCompose() {
+    var container = document.getElementById('compose-blocks');
+    var blocks = Array.from(container.querySelectorAll('.compose-block'));
+
+    if (blocks.length === 0) {
+        alert('请先添加文本框！');
+        return;
+    }
+
+    // 取主模板（第 0 块）
+    var templateTA = blocks[0].querySelector('textarea');
+    if (!templateTA) { alert('找不到主模板文本框！'); return; }
+    var result = templateTA.value;
+
+    // 依次替换：第 i 块（i>=1）的内容替换「插入i」
+    for (var i = 1; i < blocks.length; i++) {
+        var insertTA = blocks[i].querySelector('textarea');
+        if (!insertTA) continue;
+        var insertContent = insertTA.value;
+        var marker = '插入' + i;
+        // 全局替换（split/join 不依赖 replaceAll 兼容性）
+        result = result.split(marker).join(insertContent);
+    }
+
+    var resultArea = document.getElementById('compose-result');
+    resultArea.value = result;
+
+    // 复制到剪贴板
+    var statusEl = document.getElementById('compose-status');
+    function showComposeSuccess() {
+        statusEl.textContent = '✅ 已合成并复制到剪贴板！共 ' + result.length.toLocaleString() + ' 字符。';
+        statusEl.style.display = 'block';
+        setTimeout(function () { statusEl.style.display = 'none'; }, 4000);
+    }
+    function showComposeError() {
+        statusEl.textContent = '✅ 已合成（剪贴板复制失败，请手动选取右侧文本复制）。';
+        statusEl.style.color = '#d83b01';
+        statusEl.style.display = 'block';
+        setTimeout(function () {
+            statusEl.style.display = 'none';
+            statusEl.style.color = '#107C10';
+        }, 5000);
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(result).then(showComposeSuccess).catch(function () {
+            // fallback
+            try { resultArea.select(); document.execCommand('copy'); showComposeSuccess(); }
+            catch (e) { showComposeError(); }
+        });
+    } else {
+        try { resultArea.select(); document.execCommand('copy'); showComposeSuccess(); }
+        catch (e) { showComposeError(); }
+    }
+}
 </script>
 </body>
 </html>
