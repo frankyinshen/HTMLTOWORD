@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V6.0</title>
+    <title>AI 全能转换神器 V6.1</title>
     <!-- Markdown 解析 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- JSZip：用于 xlsx 分页预览 XML 后处理 -->
@@ -576,16 +576,51 @@ function downloadDocx(bodyContent, filename) {
 
 // ══════════════════════════════════════════════════════
 // Excel 辅助：从 HTML table 提取二维数组 + 特殊列索引
+// 同时提取富文本（保留 <strong> 加粗信息）
 // ══════════════════════════════════════════════════════
+
+/**
+ * 递归遍历 DOM 节点，收集 {text, bold} runs
+ * 用于把 <strong>xxx</strong> 转成 ExcelJS richText 格式
+ */
+function _collectRuns(node, isBold, runs) {
+    if (node.nodeType === 3) {          // 文本节点
+        var t = node.textContent;
+        if (t) runs.push({ text: t, bold: isBold });
+    } else if (node.nodeType === 1) {   // 元素节点
+        var tag = node.tagName.toUpperCase();
+        var b = isBold || (tag === 'STRONG' || tag === 'B');
+        node.childNodes.forEach(function (child) { _collectRuns(child, b, runs); });
+    }
+}
+
+/**
+ * 把单元格 DOM 解析成 richText runs 数组。
+ * 若单元格内没有任何 <strong>/<b>，返回 null（使用普通字符串即可）。
+ */
+function _cellToRichRuns(cellEl) {
+    if (!cellEl.querySelector('strong, b')) return null;
+    var runs = [];
+    cellEl.childNodes.forEach(function (child) { _collectRuns(child, false, runs); });
+    // 去掉首尾空白的纯空白 run
+    while (runs.length && !runs[0].text.trim()) runs.shift();
+    while (runs.length && !runs[runs.length - 1].text.trim()) runs.pop();
+    return runs.length ? runs : null;
+}
+
 function tableToArray(table) {
     var rows = table.querySelectorAll('tr');
-    var data = [], maxCols = 0;
+    var data = [], richData = [], maxCols = 0;
     rows.forEach(function (row) {
         var cells = row.querySelectorAll('th, td');
-        var arr = [];
-        cells.forEach(function (cell) { arr.push(cell.textContent.trim()); });
+        var arr = [], richArr = [];
+        cells.forEach(function (cell) {
+            arr.push(cell.textContent.trim());
+            richArr.push(_cellToRichRuns(cell));   // null 表示无加粗
+        });
         if (arr.length > maxCols) maxCols = arr.length;
         data.push(arr);
+        richData.push(richArr);
     });
     var phoneticColIdx = -1, chunkColIdx = -1;
     if (data.length > 0) {
@@ -595,7 +630,7 @@ function tableToArray(table) {
             if (h.indexOf('语块') >= 0) chunkColIdx    = ci;
         });
     }
-    return { data: data, cols: maxCols, phoneticColIdx: phoneticColIdx, chunkColIdx: chunkColIdx };
+    return { data: data, richData: richData, cols: maxCols, phoneticColIdx: phoneticColIdx, chunkColIdx: chunkColIdx };
 }
 
 // ══════════════════════════════════════════════════════
@@ -667,9 +702,9 @@ function buildExcelWorksheet(ws, titleText, parsed) {
         for (var c = 0; c < cols; c++) {
             var cell = ws.getCell(excelRowNum, c + 1);
             var val  = (row[c] !== undefined && row[c] !== null) ? String(row[c]) : '';
-            cell.value = val;
 
             if (isHeader) {
+                cell.value = val;
                 cell.font      = { name: 'SimSun', size: 14, bold: true, color: { argb: 'FF1F2D3D' } };
                 cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
                 cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } };
@@ -685,7 +720,29 @@ function buildExcelWorksheet(ws, titleText, parsed) {
                 }
                 var isBold = (c === chunkColIdx);
 
-                cell.font      = { name: fontName, size: 14, bold: isBold, color: { argb: 'FF000000' } };
+                // 尝试使用富文本（保留 <strong> 加粗）
+                var richRuns = parsed.richData && parsed.richData[rIdx] && parsed.richData[rIdx][c];
+                if (richRuns) {
+                    cell.value = {
+                        richText: richRuns.map(function (run) {
+                            // 每个 run 的字体：中文用 SimSun，英文用 Times New Roman
+                            var rFont = /[\u4e00-\u9fa5]/.test(run.text) ? 'SimSun' : 'Times New Roman';
+                            return {
+                                text: run.text,
+                                font: {
+                                    name:  rFont,
+                                    size:  14,
+                                    bold:  run.bold || isBold,
+                                    color: { argb: 'FF000000' }
+                                }
+                            };
+                        })
+                    };
+                } else {
+                    cell.value = val;
+                    cell.font  = { name: fontName, size: 14, bold: isBold, color: { argb: 'FF000000' } };
+                }
+
                 cell.alignment = {
                     horizontal: c === 0 ? 'center' : 'left',
                     vertical:   'middle',
@@ -726,14 +783,25 @@ function triggerDownload(blob, filename, mime) {
 // ══════════════════════════════════════════════════════
 // 1. 普通文章转 Word
 // ══════════════════════════════════════════════════════
+
+/**
+ * 在交给 marked.parse() 之前，把 AI 常见的 page-break div 转成 Markdown 水平线 ---
+ * 这样 marked 会生成 <hr>，再由 hrToVisual / hrToPageBreak 正确处理。
+ * （避免 marked 把 <div> 包进 <p> 导致正则失效）
+ */
+function preprocessPageBreaks(text) {
+    return text.replace(/<div\s+style=["']page-break-after\s*:\s*always;?["']\s*>\s*<\/div>/gi,
+        '\n\n---\n\n');
+}
+
 function renderWord() {
     var input = translateMathSymbols(document.getElementById('word-input').value);
-    var html  = cleanupList(hrToVisual(marked.parse(disableMarkdownLists(input))));
+    var html  = cleanupList(hrToVisual(marked.parse(disableMarkdownLists(preprocessPageBreaks(input)))));
     document.getElementById('word-preview').innerHTML = html;
 }
 function downloadWord() {
     var input   = translateMathSymbols(document.getElementById('word-input').value);
-    var html    = cleanupList(hrToPageBreak(marked.parse(disableMarkdownLists(input))));
+    var html    = cleanupList(hrToPageBreak(marked.parse(disableMarkdownLists(preprocessPageBreaks(input)))));
     var engName = extractEnglishFilename(input);
     downloadDocx(html, (engName || 'AI_Article') + '.docx');
 }
