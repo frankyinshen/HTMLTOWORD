@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V5.8</title>
+    <title>AI 全能转换神器 V6.0</title>
     <!-- Markdown 解析 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- JSZip：用于 xlsx 分页预览 XML 后处理 -->
@@ -187,6 +187,31 @@
             padding: 8px 12px; margin-bottom: 12px; line-height: 1.7;
         }
         .compose-tip strong { color: #0078d4; }
+        /* 保存面板 */
+        .save-panel {
+            background: #fffbea; border: 1px solid #f0d060; border-radius: 8px;
+            padding: 12px 16px; margin-bottom: 14px;
+        }
+        .save-panel-title { font-weight: bold; font-size: 13px; color: #7a5800; margin-bottom: 10px; }
+        .save-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+        .save-name-input {
+            flex: 1; min-width: 120px; padding: 6px 10px; font-size: 13px;
+            border: 1px solid #ccc; border-radius: 4px;
+        }
+        .save-select {
+            flex: 1; min-width: 140px; padding: 6px 8px; font-size: 13px;
+            border: 1px solid #ccc; border-radius: 4px; background: #fff;
+        }
+        .btn-save   { background: #e67e00 !important; }
+        .btn-load   { background: #0078d4 !important; }
+        .btn-del    { background: #d83b01 !important; }
+        .save-hint  { font-size: 11px; color: #999; margin-top: 4px; }
+        /* 每段清空按钮 */
+        .block-clear-btn {
+            padding: 4px 12px; font-size: 12px; background: #888; color: white;
+            border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;
+        }
+        .block-clear-btn:hover { background: #555; }
     </style>
 </head>
 <body>
@@ -198,7 +223,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V5.8</span>
+    <span class="version-badge">V6.0</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -338,16 +363,36 @@
             <div class="compose-block" id="compose-block-0">
                 <div class="compose-block-header">
                     <span class="compose-block-label primary">📋 第 1 段 — 主模板（在需要插入的地方写"插入1"、"插入2"…）</span>
+                    <button class="block-clear-btn" onclick="clearBlockText('compose-text-0')">🧹 清空此段</button>
                 </div>
                 <textarea class="chunk-textarea" id="compose-text-0"
-                    style="min-height:220px;"
+                    style="min-height:180px;"
                     placeholder="粘贴主指令模板。&#10;&#10;在需要插入第 2 段内容的地方，写上：插入1&#10;在需要插入第 3 段内容的地方，写上：插入2&#10;（可根据实际需要自行命名）"></textarea>
+                <!-- 保存面板 -->
+                <div class="save-panel" style="margin-top:10px;">
+                    <div class="save-panel-title">💾 常用指令保存 / 加载</div>
+                    <div class="save-row">
+                        <input type="text" id="save-name-input" class="save-name-input" placeholder="输入指令名称（如：AR阅读指令）" maxlength="40">
+                        <button class="action-btn btn-save" style="padding:6px 16px;font-size:13px;" onclick="saveTemplate()">💾 保存当前主模板</button>
+                    </div>
+                    <div class="save-row">
+                        <select id="saved-templates-select" class="save-select">
+                            <option value="">— 选择已保存的指令 —</option>
+                        </select>
+                        <button class="action-btn btn-load" style="padding:6px 14px;font-size:13px;" onclick="loadTemplate()">📂 加载</button>
+                        <button class="action-btn btn-del" style="padding:6px 14px;font-size:13px;" onclick="deleteTemplate()">🗑️ 删除</button>
+                    </div>
+                    <div class="save-hint">💡 保存的指令存储在本地浏览器中，关闭此文件后仍可读取（同一浏览器）。</div>
+                </div>
             </div>
             <!-- Block 1: 第一个插入段 -->
             <div class="compose-block" id="compose-block-1">
                 <div class="compose-block-header">
                     <span class="compose-block-label secondary" id="compose-label-1">📄 第 2 段 — 将替换主模板中的「插入1」</span>
-                    <button class="action-btn clear" style="padding:5px 14px;font-size:12px;" onclick="removeComposeBlock('compose-block-1')">🗑️ 删除此段</button>
+                    <div style="display:flex;gap:6px;">
+                        <button class="block-clear-btn" onclick="clearBlockText('compose-text-1')">🧹 清空此段</button>
+                        <button class="action-btn clear" style="padding:5px 14px;font-size:12px;" onclick="removeComposeBlock('compose-block-1')">🗑️ 删除此段</button>
+                    </div>
                 </div>
                 <textarea class="chunk-textarea" id="compose-text-1"
                     style="min-height:120px;"
@@ -722,7 +767,7 @@ async function downloadExcel() {
         var fixedSheetNames = ['语块', '单词'];
 
         var workbook = new ExcelJS.Workbook();
-        workbook.creator  = 'AI 全能转换神器 V5.8';
+        workbook.creator  = 'AI 全能转换神器 V4.5';
         workbook.created  = new Date();
 
         var tableArray = Array.from(tables);
@@ -952,12 +997,15 @@ function showCopied(btn) {
 
 document.addEventListener('DOMContentLoaded', function () {
     var voInput = document.getElementById('voiceover-input');
-    voInput.addEventListener('paste', function () {
-        setTimeout(function () {
-            voInput.setSelectionRange(0, 0);
-            voInput.scrollTop = 0;
-        }, 10);
-    });
+    if (voInput) {
+        voInput.addEventListener('paste', function () {
+            setTimeout(function () {
+                voInput.setSelectionRange(0, 0);
+                voInput.scrollTop = 0;
+            }, 10);
+        });
+    }
+    _loadSavedTemplateList();
 });
 
 // ══════════════════════════════════════════════════════
@@ -982,19 +1030,24 @@ function _refreshComposeLabels() {
         } else {
             labelEl.textContent = '📄 第 ' + (i + 1) + ' 段 — 将替换主模板中的「插入' + i + '」';
             labelEl.className = 'compose-block-label secondary';
-            // 同步更新 placeholder
             var ta = block.querySelector('textarea');
             if (ta) ta.placeholder = '粘贴要替换「插入' + i + '」的文字（保留原始格式）...';
         }
     });
 }
 
+/** 清空单个文本框 */
+function clearBlockText(textareaId) {
+    var ta = document.getElementById(textareaId);
+    if (ta) ta.value = '';
+}
+
 /** 增加一个文本框 */
 function addComposeBlock() {
     var uid = _composeIdCounter++;
     var container = document.getElementById('compose-blocks');
-    var currentCount = container.querySelectorAll('.compose-block').length; // i = currentCount (0-based after append)
-    var insertNum = currentCount; // 当前段位 N，即替换「插入N」
+    var currentCount = container.querySelectorAll('.compose-block').length;
+    var insertNum = currentCount;
 
     var div = document.createElement('div');
     div.className = 'compose-block';
@@ -1002,14 +1055,16 @@ function addComposeBlock() {
     div.innerHTML =
         '<div class="compose-block-header">' +
             '<span class="compose-block-label secondary">📄 第 ' + (currentCount + 1) + ' 段 — 将替换主模板中的「插入' + insertNum + '」</span>' +
-            '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" ' +
-                'onclick="removeComposeBlock(\'compose-block-' + uid + '\')">🗑️ 删除此段</button>' +
+            '<div style="display:flex;gap:6px;">' +
+                '<button class="block-clear-btn" onclick="clearBlockText(\'compose-text-' + uid + '\')">🧹 清空此段</button>' +
+                '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" ' +
+                    'onclick="removeComposeBlock(\'compose-block-' + uid + '\')">🗑️ 删除此段</button>' +
+            '</div>' +
         '</div>' +
         '<textarea class="chunk-textarea" id="compose-text-' + uid + '" style="min-height:120px;" ' +
             'placeholder="粘贴要替换「插入' + insertNum + '」的文字（保留原始格式）..."></textarea>';
     container.appendChild(div);
     _refreshComposeLabels();
-    // 滚动到底部
     div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -1035,15 +1090,32 @@ function clearCompose() {
         '<div class="compose-block" id="compose-block-0">' +
             '<div class="compose-block-header">' +
                 '<span class="compose-block-label primary">📋 第 1 段 — 主模板（在需要插入的地方写"插入1"、"插入2"…）</span>' +
+                '<button class="block-clear-btn" onclick="clearBlockText(\'compose-text-0\')">🧹 清空此段</button>' +
             '</div>' +
-            '<textarea class="chunk-textarea" id="compose-text-0" style="min-height:220px;" ' +
+            '<textarea class="chunk-textarea" id="compose-text-0" style="min-height:180px;" ' +
                 'placeholder="粘贴主指令模板。&#10;&#10;在需要插入第 2 段内容的地方，写上：插入1&#10;在需要插入第 3 段内容的地方，写上：插入2&#10;（可根据实际需要自行命名）"></textarea>' +
+            '<div class="save-panel" style="margin-top:10px;">' +
+                '<div class="save-panel-title">💾 常用指令保存 / 加载</div>' +
+                '<div class="save-row">' +
+                    '<input type="text" id="save-name-input" class="save-name-input" placeholder="输入指令名称（如：AR阅读指令）" maxlength="40">' +
+                    '<button class="action-btn btn-save" style="padding:6px 16px;font-size:13px;" onclick="saveTemplate()">💾 保存当前主模板</button>' +
+                '</div>' +
+                '<div class="save-row">' +
+                    '<select id="saved-templates-select" class="save-select"><option value="">— 选择已保存的指令 —</option></select>' +
+                    '<button class="action-btn btn-load" style="padding:6px 14px;font-size:13px;" onclick="loadTemplate()">📂 加载</button>' +
+                    '<button class="action-btn btn-del" style="padding:6px 14px;font-size:13px;" onclick="deleteTemplate()">🗑️ 删除</button>' +
+                '</div>' +
+                '<div class="save-hint">💡 保存的指令存储在本地浏览器中，关闭此文件后仍可读取（同一浏览器）。</div>' +
+            '</div>' +
         '</div>' +
         '<div class="compose-block" id="compose-block-1">' +
             '<div class="compose-block-header">' +
                 '<span class="compose-block-label secondary">📄 第 2 段 — 将替换主模板中的「插入1」</span>' +
-                '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" ' +
-                    'onclick="removeComposeBlock(\'compose-block-1\')">🗑️ 删除此段</button>' +
+                '<div style="display:flex;gap:6px;">' +
+                    '<button class="block-clear-btn" onclick="clearBlockText(\'compose-text-1\')">🧹 清空此段</button>' +
+                    '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" ' +
+                        'onclick="removeComposeBlock(\'compose-block-1\')">🗑️ 删除此段</button>' +
+                '</div>' +
             '</div>' +
             '<textarea class="chunk-textarea" id="compose-text-1" style="min-height:120px;" ' +
                 'placeholder="粘贴要替换「插入1」的文字（保留原始格式）..."></textarea>' +
@@ -1053,6 +1125,7 @@ function clearCompose() {
     var status = document.getElementById('compose-status');
     status.style.display = 'none';
     status.textContent = '';
+    _loadSavedTemplateList();
 }
 
 /**
@@ -1114,6 +1187,96 @@ function synthesizeCompose() {
         catch (e) { showComposeError(); }
     }
 }
+
+// ══════════════════════════════════════════════════════
+// 常用指令 保存 / 加载 / 删除（localStorage）
+// ══════════════════════════════════════════════════════
+var SAVE_KEY = 'ai_converter_saved_templates';
+
+function _getSavedTemplates() {
+    try {
+        var raw = localStorage.getItem(SAVE_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+}
+
+function _putSavedTemplates(obj) {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(obj)); } catch (e) {}
+}
+
+function _loadSavedTemplateList() {
+    var sel = document.getElementById('saved-templates-select');
+    if (!sel) return;
+    var saved = _getSavedTemplates();
+    var names = Object.keys(saved).sort();
+    sel.innerHTML = '<option value="">— 选择已保存的指令 —</option>';
+    names.forEach(function (name) {
+        var opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+    });
+}
+
+function saveTemplate() {
+    var nameInput = document.getElementById('save-name-input');
+    var ta = document.getElementById('compose-text-0');
+    if (!nameInput || !ta) return;
+    var name = nameInput.value.trim();
+    if (!name) { alert('请先输入指令名称！'); nameInput.focus(); return; }
+    var content = ta.value;
+    if (!content.trim()) { alert('主模板内容为空，请先填写内容再保存。'); return; }
+    var saved = _getSavedTemplates();
+    if (saved[name] && !confirm('「' + name + '」已存在，是否覆盖？')) return;
+    saved[name] = content;
+    _putSavedTemplates(saved);
+    _loadSavedTemplateList();
+    // 选中刚保存的项
+    var sel = document.getElementById('saved-templates-select');
+    if (sel) sel.value = name;
+    nameInput.value = '';
+    _showSaveStatus('✅ 「' + name + '」已保存！');
+}
+
+function loadTemplate() {
+    var sel = document.getElementById('saved-templates-select');
+    var ta = document.getElementById('compose-text-0');
+    if (!sel || !ta) return;
+    var name = sel.value;
+    if (!name) { alert('请先从下拉列表中选择一个已保存的指令。'); return; }
+    var saved = _getSavedTemplates();
+    if (!saved[name]) { alert('找不到该指令，可能已被删除。'); _loadSavedTemplateList(); return; }
+    if (ta.value.trim() && !confirm('主模板当前有内容，加载后将被覆盖，确认继续？')) return;
+    ta.value = saved[name];
+    _showSaveStatus('📂 「' + name + '」已加载到主模板。');
+}
+
+function deleteTemplate() {
+    var sel = document.getElementById('saved-templates-select');
+    if (!sel) return;
+    var name = sel.value;
+    if (!name) { alert('请先从下拉列表中选择要删除的指令。'); return; }
+    if (!confirm('确认删除「' + name + '」？此操作不可撤销。')) return;
+    var saved = _getSavedTemplates();
+    delete saved[name];
+    _putSavedTemplates(saved);
+    _loadSavedTemplateList();
+    _showSaveStatus('🗑️ 「' + name + '」已删除。');
+}
+
+function _showSaveStatus(msg) {
+    var statusEl = document.getElementById('compose-status');
+    if (!statusEl) return;
+    statusEl.textContent = msg;
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#107C10';
+    statusEl.style.background = '#e8f5e9';
+    statusEl.style.borderColor = '#a5d6a7';
+    setTimeout(function () { statusEl.style.display = 'none'; }, 3500);
+}
+
+// 页面加载时初始化已保存列表（在上方统一的 DOMContentLoaded 中处理）
+
 </script>
 </body>
 </html>
