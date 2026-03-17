@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V6.1</title>
+    <title>AI 全能转换神器 V6.6</title>
     <!-- Markdown 解析 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- JSZip：用于 xlsx 分页预览 XML 后处理 -->
@@ -223,7 +223,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V6.0</span>
+    <span class="version-badge">V6.6</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -398,6 +398,19 @@
                     style="min-height:120px;"
                     placeholder="粘贴要替换「插入1」的文字（保留原始格式）..."></textarea>
             </div>
+            <!-- Block 2: 第二个插入段 -->
+            <div class="compose-block" id="compose-block-2">
+                <div class="compose-block-header">
+                    <span class="compose-block-label secondary" id="compose-label-2">📄 第 3 段 — 将替换主模板中的「插入2」</span>
+                    <div style="display:flex;gap:6px;">
+                        <button class="block-clear-btn" onclick="clearBlockText('compose-text-2')">🧹 清空此段</button>
+                        <button class="action-btn clear" style="padding:5px 14px;font-size:12px;" onclick="removeComposeBlock('compose-block-2')">🗑️ 删除此段</button>
+                    </div>
+                </div>
+                <textarea class="chunk-textarea" id="compose-text-2"
+                    style="min-height:120px;"
+                    placeholder="粘贴要替换「插入2」的文字（保留原始格式）..."></textarea>
+            </div>
         </div>
     </div>
 
@@ -471,7 +484,7 @@ function smartExtractEnglish(rawText) {
     return rawText.split('\n').map(function (line) {
         if (!line.trim()) return '';
         if (/[\u4e00-\u9fa5]/.test(line)) {
-            var eng = (line.replace(/[\u4e00-\u9fa5]/g, '').match(/[a-zA-Z]/g) || []).length;
+            var eng = (line.replace(/[\u4e00-\u9fa5]/g, '').match(/[a-zA-Z]/g) ||[]).length;
             if (eng < 5) return null;
             return line
                 .replace(/[\u4e00-\u9fa5]|[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]/g, '')
@@ -600,7 +613,7 @@ function _collectRuns(node, isBold, runs) {
  */
 function _cellToRichRuns(cellEl) {
     if (!cellEl.querySelector('strong, b')) return null;
-    var runs = [];
+    var runs =[];
     cellEl.childNodes.forEach(function (child) { _collectRuns(child, false, runs); });
     // 去掉首尾空白的纯空白 run
     while (runs.length && !runs[0].text.trim()) runs.shift();
@@ -610,10 +623,10 @@ function _cellToRichRuns(cellEl) {
 
 function tableToArray(table) {
     var rows = table.querySelectorAll('tr');
-    var data = [], richData = [], maxCols = 0;
+    var data = [], richData =[], maxCols = 0;
     rows.forEach(function (row) {
         var cells = row.querySelectorAll('th, td');
-        var arr = [], richArr = [];
+        var arr = [], richArr =[];
         cells.forEach(function (cell) {
             arr.push(cell.textContent.trim());
             richArr.push(_cellToRichRuns(cell));   // null 表示无加粗
@@ -660,7 +673,7 @@ function buildExcelWorksheet(ws, titleText, parsed) {
     ws.pageSetup.horizontalCentered = true;
     ws.pageSetup.printTitlesRow     = '1:2';
 
-    ws.views = [{
+    ws.views =[{
         state:       'frozen',
         xSplit:      0,
         ySplit:      2,
@@ -941,7 +954,7 @@ function clearVoiceover() {
 }
 
 function extractPureEnglish(rawText) {
-    var lines = rawText.split('\n'), result = [];
+    var lines = rawText.split('\n'), result =[];
     lines.forEach(function (line) {
         var trimmed = line.trim();
         if (!trimmed) { result.push(''); return; }
@@ -952,7 +965,7 @@ function extractPureEnglish(rawText) {
                 .replace(/^[-*]\s+/g, '').replace(/^\d+\.\s+/g, '').trim();
             if (clean) result.push(clean);
         } else {
-            var engCount = (line.replace(/[\u4e00-\u9fa5]/g, '').match(/[a-zA-Z]/g) || []).length;
+            var engCount = (line.replace(/[\u4e00-\u9fa5]/g, '').match(/[a-zA-Z]/g) ||[]).length;
             if (engCount >= 5) {
                 var cleaned = line
                     .replace(/[\u4e00-\u9fa5]/g, '')
@@ -969,7 +982,7 @@ function extractPureEnglish(rawText) {
 
 function splitIntoSentences(text) {
     var raw = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-    var sentences = [], re = /[^.!?]*(?:[.!?](?:["')\]]*(?:\s|$)))/g;
+    var sentences = [], re = /[^.!?]*(?:[.!?]+(?:["')\]]*(?:\s|$)))/g;
     var match, lastIndex = 0;
     while ((match = re.exec(raw)) !== null) {
         var s = match[0].trim();
@@ -982,7 +995,7 @@ function splitIntoSentences(text) {
 }
 
 function chunkSentences(sentences, maxLen) {
-    var chunks = [], current = '';
+    var chunks =[], current = '';
     sentences.forEach(function (s) {
         var candidate = current ? current + ' ' + s : s;
         if (candidate.length <= maxLen) { current = candidate; }
@@ -1081,7 +1094,7 @@ document.addEventListener('DOMContentLoaded', function () {
 // ══════════════════════════════════════════════════════
 
 // 全局计数器，用于生成唯一 id
-var _composeIdCounter = 2;
+var _composeIdCounter = 3;
 
 /**
  * 重新计算所有文本框的序号标签
@@ -1151,7 +1164,7 @@ function removeComposeBlock(blockId) {
     _refreshComposeLabels();
 }
 
-/** 清空所有内容，恢复初始两个文本框 */
+/** 清空所有内容，恢复初始默认文本框 */
 function clearCompose() {
     var container = document.getElementById('compose-blocks');
     container.innerHTML =
@@ -1187,8 +1200,20 @@ function clearCompose() {
             '</div>' +
             '<textarea class="chunk-textarea" id="compose-text-1" style="min-height:120px;" ' +
                 'placeholder="粘贴要替换「插入1」的文字（保留原始格式）..."></textarea>' +
+        '</div>' +
+        '<div class="compose-block" id="compose-block-2">' +
+            '<div class="compose-block-header">' +
+                '<span class="compose-block-label secondary">📄 第 3 段 — 将替换主模板中的「插入2」</span>' +
+                '<div style="display:flex;gap:6px;">' +
+                    '<button class="block-clear-btn" onclick="clearBlockText(\'compose-text-2\')">🧹 清空此段</button>' +
+                    '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" ' +
+                        'onclick="removeComposeBlock(\'compose-block-2\')">🗑️ 删除此段</button>' +
+                '</div>' +
+            '</div>' +
+            '<textarea class="chunk-textarea" id="compose-text-2" style="min-height:120px;" ' +
+                'placeholder="粘贴要替换「插入2」的文字（保留原始格式）..."></textarea>' +
         '</div>';
-    _composeIdCounter = 2;
+    _composeIdCounter = 3;
     document.getElementById('compose-result').value = '';
     var status = document.getElementById('compose-status');
     status.style.display = 'none';
@@ -1219,6 +1244,8 @@ function synthesizeCompose() {
         var insertTA = blocks[i].querySelector('textarea');
         if (!insertTA) continue;
         var insertContent = insertTA.value;
+        if (!insertContent) continue; // 如果用户不输入，就当做不存在，跳过替换
+
         var marker = '插入' + i;
         // 全局替换（split/join 不依赖 replaceAll 兼容性）
         result = result.split(marker).join(insertContent);
