@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V6.6</title>
+    <title>AI 全能转换神器 V6.7</title>
     <!-- Markdown 解析 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- JSZip：用于 xlsx 分页预览 XML 后处理 -->
@@ -221,9 +221,9 @@
     <button class="tab-btn" onclick="switchTab('excel', this)">📊 表格转 Excel</button>
     <button class="tab-btn" onclick="switchTab('split', this)">🔀 双语分离转 Word</button>
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
-    <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 双语→英文切割</button>
+    <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V6.6</span>
+    <span class="version-badge">V6.7</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -300,7 +300,7 @@
     </div>
 </div>
 
-<!-- 5. 双语→英文切割 -->
+<!-- 5. 文本切割 -->
 <div id="workspace-voiceover" class="workspace">
     <div class="voiceover-banner">
         <a href="https://app.clipchamp.com/consumer/editor/?feature=voiceover" target="_blank">
@@ -320,15 +320,17 @@
     </div>
     <div class="voiceover-main">
         <div class="box vo-input-box" style="max-width:420px;min-width:280px;">
-            <div class="controls">
-                <span>粘贴双语文章:</span><div style="flex:1"></div>
-                <button class="action-btn clear" onclick="clearVoiceover()">清空</button>
+            <div class="controls" style="gap: 15px; flex-wrap: wrap;">
+                <label style="cursor:pointer; font-weight:bold; color:#0078d4;"><input type="radio" name="vo-mode" value="bilingual" checked onchange="processVoiceover()"> 🔀 双语提取</label>
+                <label style="cursor:pointer; font-weight:bold; color:#107C10;"><input type="radio" name="vo-mode" value="single" onchange="processVoiceover()"> 📄 单语言切割</label>
+                <div style="flex:1"></div>
+                <button class="action-btn clear" style="padding: 6px 12px; font-size: 13px;" onclick="clearVoiceover()">清空</button>
             </div>
             <textarea id="voiceover-input" oninput="processVoiceover()"
-                placeholder="粘贴双语文章（中英混合）...&#10;&#10;将自动提取纯英文，按不超过 7650 字符（完整句子）切割。"
+                placeholder="粘贴文章...&#10;&#10;如果是双语提取模式，将自动提取纯英文；&#10;如果是单语言模式，将直接按不超过 7650 字符切割。"
                 style="flex:1;min-height:300px;"></textarea>
             <div style="margin-top:10px;font-size:12px;color:#888;line-height:1.6;">
-                每段上限 <strong>7,650</strong> 字符 · 按句子边界切割 · 结果可直接编辑
+                每段上限 <strong>7,650</strong> 字符 · 按句子边界安全切割
             </div>
         </div>
         <div class="box" style="flex:2;overflow:hidden;display:flex;flex-direction:column;">
@@ -337,7 +339,7 @@
             </div>
             <div id="chunk-count-bar" class="chunk-count-bar"></div>
             <div id="chunks-area" class="chunks-area">
-                <div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制 / 可编辑的英文片段</div>
+                <div class="empty-hint">⬅️ 在左侧粘贴文章，右侧自动生成可复制 / 可编辑的片段</div>
             </div>
         </div>
     </div>
@@ -524,17 +526,7 @@ function extractEnglishFilename(text) {
 
 // ══════════════════════════════════════════════════════
 // HTML 处理辅助函数
-//
-// hrToVisual   : <hr> 和 <div style="page-break-after:always"> → 预览用分页线 div
-// hrToPageBreak: <hr> 和 <div style="page-break-after:always"> → Word 换页符
-// cleanupList  : 修复 <li><p> 嵌套
-//
-// 支持 AI 输出的两种分页标记：
-//   *** （Markdown hr）
-//   <div style="page-break-after: always;"></div>
 // ══════════════════════════════════════════════════════
-
-// 匹配 AI 输出的 page-break-after div（兼容单双引号、空格、有无末尾分号）
 var RE_PB_DIV = /<div\s+style=["']page-break-after\s*:\s*always;?["']\s*>\s*<\/div>/gi;
 var MSO_BREAK = '<p style="page-break-before:always;margin:0;padding:0;mso-break-type:page-break;"></p>';
 var VISUAL_BREAK = '<div class="page-break-line"></div>';
@@ -560,11 +552,13 @@ function cleanupList(html) {
 }
 
 // ══════════════════════════════════════════════════════
-// Word (.docx) 生成
+// Word (.docx) 生成（自带底部居中页码）
 // ══════════════════════════════════════════════════════
 function buildFullHtml(bodyContent) {
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
         'body{font-family:Calibri,"宋体",sans-serif;font-size:14pt;line-height:1.6;margin:2.54cm;}' +
+        '@page WordSection1 { mso-footer: f1; } ' +
+        'div.WordSection1 { page: WordSection1; } ' +
         'p,li,div{font-size:14pt;line-height:150%;margin-bottom:10pt;text-align:left;}' +
         'strong{font-weight:bold;}' +
         'h1,h2,h3,h4,h5{color:#2E74B5;margin-bottom:15pt;}' +
@@ -572,7 +566,11 @@ function buildFullHtml(bodyContent) {
         'table{border-collapse:collapse;width:100%;margin:15px 0;}' +
         'td,th{border:1px solid #000;padding:8px;font-size:14pt;}' +
         'th{background-color:#f2f2f2;font-weight:bold;}' +
-        '</style></head><body>' + bodyContent + '</body></html>';
+        '</style></head><body>' +
+        '<div class="WordSection1">' + bodyContent + 
+        '<div style="mso-element:footer" id="f1">' +
+        '<p class="MsoFooter" style="text-align:center;margin:0;"><span style="mso-field-code:\' PAGE \'"></span></p>' +
+        '</div></div></body></html>';
 }
 function downloadDocx(bodyContent, filename) {
     if (typeof htmlDocx === 'undefined') {
@@ -589,33 +587,22 @@ function downloadDocx(bodyContent, filename) {
 
 // ══════════════════════════════════════════════════════
 // Excel 辅助：从 HTML table 提取二维数组 + 特殊列索引
-// 同时提取富文本（保留 <strong> 加粗信息）
 // ══════════════════════════════════════════════════════
-
-/**
- * 递归遍历 DOM 节点，收集 {text, bold} runs
- * 用于把 <strong>xxx</strong> 转成 ExcelJS richText 格式
- */
 function _collectRuns(node, isBold, runs) {
-    if (node.nodeType === 3) {          // 文本节点
+    if (node.nodeType === 3) {
         var t = node.textContent;
         if (t) runs.push({ text: t, bold: isBold });
-    } else if (node.nodeType === 1) {   // 元素节点
+    } else if (node.nodeType === 1) {
         var tag = node.tagName.toUpperCase();
         var b = isBold || (tag === 'STRONG' || tag === 'B');
         node.childNodes.forEach(function (child) { _collectRuns(child, b, runs); });
     }
 }
 
-/**
- * 把单元格 DOM 解析成 richText runs 数组。
- * 若单元格内没有任何 <strong>/<b>，返回 null（使用普通字符串即可）。
- */
 function _cellToRichRuns(cellEl) {
     if (!cellEl.querySelector('strong, b')) return null;
     var runs =[];
     cellEl.childNodes.forEach(function (child) { _collectRuns(child, false, runs); });
-    // 去掉首尾空白的纯空白 run
     while (runs.length && !runs[0].text.trim()) runs.shift();
     while (runs.length && !runs[runs.length - 1].text.trim()) runs.pop();
     return runs.length ? runs : null;
@@ -626,10 +613,10 @@ function tableToArray(table) {
     var data = [], richData =[], maxCols = 0;
     rows.forEach(function (row) {
         var cells = row.querySelectorAll('th, td');
-        var arr = [], richArr =[];
+        var arr =[], richArr =[];
         cells.forEach(function (cell) {
             arr.push(cell.textContent.trim());
-            richArr.push(_cellToRichRuns(cell));   // null 表示无加粗
+            richArr.push(_cellToRichRuns(cell));
         });
         if (arr.length > maxCols) maxCols = arr.length;
         data.push(arr);
@@ -646,9 +633,6 @@ function tableToArray(table) {
     return { data: data, richData: richData, cols: maxCols, phoneticColIdx: phoneticColIdx, chunkColIdx: chunkColIdx };
 }
 
-// ══════════════════════════════════════════════════════
-// Excel 单元格边框辅助
-// ══════════════════════════════════════════════════════
 function mkBorder(hex) {
     var s = { style: 'thin', color: { argb: 'FF' + hex } };
     return { top: s, bottom: s, left: s, right: s };
@@ -672,6 +656,9 @@ function buildExcelWorksheet(ws, titleText, parsed) {
     ws.pageSetup.fitToHeight        = 0;
     ws.pageSetup.horizontalCentered = true;
     ws.pageSetup.printTitlesRow     = '1:2';
+    
+    // 添加底部居中页码
+    ws.headerFooter = { oddFooter: '&C&P' };
 
     ws.views =[{
         state:       'frozen',
@@ -733,12 +720,10 @@ function buildExcelWorksheet(ws, titleText, parsed) {
                 }
                 var isBold = (c === chunkColIdx);
 
-                // 尝试使用富文本（保留 <strong> 加粗）
                 var richRuns = parsed.richData && parsed.richData[rIdx] && parsed.richData[rIdx][c];
                 if (richRuns) {
                     cell.value = {
                         richText: richRuns.map(function (run) {
-                            // 每个 run 的字体：中文用 SimSun，英文用 Times New Roman
                             var rFont = /[\u4e00-\u9fa5]/.test(run.text) ? 'SimSun' : 'Times New Roman';
                             return {
                                 text: run.text,
@@ -796,12 +781,6 @@ function triggerDownload(blob, filename, mime) {
 // ══════════════════════════════════════════════════════
 // 1. 普通文章转 Word
 // ══════════════════════════════════════════════════════
-
-/**
- * 在交给 marked.parse() 之前，把 AI 常见的 page-break div 转成 Markdown 水平线 ---
- * 这样 marked 会生成 <hr>，再由 hrToVisual / hrToPageBreak 正确处理。
- * （避免 marked 把 <div> 包进 <p> 导致正则失效）
- */
 function preprocessPageBreaks(text) {
     return text.replace(/<div\s+style=["']page-break-after\s*:\s*always;?["']\s*>\s*<\/div>/gi,
         '\n\n---\n\n');
@@ -944,7 +923,7 @@ function downloadHtmlWord() {
 }
 
 // ══════════════════════════════════════════════════════
-// 5. 双语→英文切割
+// 5. 文本切割 (双语 / 单语言)
 // ══════════════════════════════════════════════════════
 var MAX_CHUNK = 7650;
 
@@ -980,18 +959,25 @@ function extractPureEnglish(rawText) {
     return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// 修复：确保数字间的小数点不会造成错误切割，且保证不遗漏字符
 function splitIntoSentences(text) {
     var raw = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-    var sentences = [], re = /[^.!?]*(?:[.!?]+(?:["')\]]*(?:\s|$)))/g;
-    var match, lastIndex = 0;
+    var sentences = [];
+    var re = /(.*?[.!?]["')\]]*)(?:\s+|$)/g;
+    var match;
+    var lastIndex = 0;
     while ((match = re.exec(raw)) !== null) {
-        var s = match[0].trim();
+        if (match[0].length === 0) {
+            re.lastIndex++;
+            continue;
+        }
+        var s = match[1].trim();
         if (s) sentences.push(s);
         lastIndex = re.lastIndex;
     }
     var remaining = raw.slice(lastIndex).trim();
     if (remaining) sentences.push(remaining);
-    return sentences.filter(function (s) { return s.length > 0; });
+    return sentences;
 }
 
 function chunkSentences(sentences, maxLen) {
@@ -1007,24 +993,32 @@ function chunkSentences(sentences, maxLen) {
 
 function processVoiceover() {
     var raw        = document.getElementById('voiceover-input').value;
+    var mode       = document.querySelector('input[name="vo-mode"]:checked').value;
     var chunksArea = document.getElementById('chunks-area');
     var totalInfo  = document.getElementById('chunk-total-info');
     var countBar   = document.getElementById('chunk-count-bar');
 
     if (!raw.trim()) {
-        chunksArea.innerHTML = '<div class="empty-hint">⬅️ 在左侧粘贴双语文章，右侧自动生成可复制 / 可编辑的英文片段</div>';
+        chunksArea.innerHTML = '<div class="empty-hint">⬅️ 在左侧粘贴文章，右侧自动生成可复制 / 可编辑的片段</div>';
         totalInfo.textContent = ''; countBar.classList.remove('show'); return;
     }
-    var englishText = extractPureEnglish(raw);
-    if (!englishText) {
-        chunksArea.innerHTML = '<div class="empty-hint">⚠️ 未提取到英文内容，请检查输入。</div>';
-        totalInfo.textContent = ''; countBar.classList.remove('show'); return;
+
+    var targetText = raw;
+    if (mode === 'bilingual') {
+        targetText = extractPureEnglish(raw);
+        if (!targetText) {
+            chunksArea.innerHTML = '<div class="empty-hint">⚠️ 未提取到英文内容，请检查输入或切换为单语言切割模式。</div>';
+            totalInfo.textContent = ''; countBar.classList.remove('show'); return;
+        }
+    } else {
+        targetText = raw.trim(); // 单语言模式下直接使用原始文本
     }
-    var sentences = splitIntoSentences(englishText);
+
+    var sentences = splitIntoSentences(targetText);
     var chunks    = chunkSentences(sentences, MAX_CHUNK);
 
     totalInfo.textContent = '共 ' + chunks.length + ' 段';
-    countBar.textContent  = '✅ 英文总字符：' + englishText.length + ' | 已切割为 ' + chunks.length + ' 段（每段上限 ' + MAX_CHUNK + ' 字符）';
+    countBar.textContent  = '✅ 总字符：' + targetText.length + ' | 已切割为 ' + chunks.length + ' 段（每段上限 ' + MAX_CHUNK + ' 字符）';
     countBar.classList.add('show');
 
     chunksArea.innerHTML = '';
@@ -1093,13 +1087,8 @@ document.addEventListener('DOMContentLoaded', function () {
 // 6. 指令合成
 // ══════════════════════════════════════════════════════
 
-// 全局计数器，用于生成唯一 id
 var _composeIdCounter = 3;
 
-/**
- * 重新计算所有文本框的序号标签
- * Block 0 始终是主模板（不变），Block 1..N 分别对应「插入1」「插入2」...
- */
 function _refreshComposeLabels() {
     var blocks = document.querySelectorAll('#compose-blocks .compose-block');
     blocks.forEach(function (block, i) {
@@ -1117,13 +1106,11 @@ function _refreshComposeLabels() {
     });
 }
 
-/** 清空单个文本框 */
 function clearBlockText(textareaId) {
     var ta = document.getElementById(textareaId);
     if (ta) ta.value = '';
 }
 
-/** 增加一个文本框 */
 function addComposeBlock() {
     var uid = _composeIdCounter++;
     var container = document.getElementById('compose-blocks');
@@ -1149,13 +1136,11 @@ function addComposeBlock() {
     div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-/** 删除指定 id 的文本框（不能删除第 0 块） */
 function removeComposeBlock(blockId) {
     var block = document.getElementById(blockId);
     if (!block) return;
     var container = document.getElementById('compose-blocks');
     var blocks = container.querySelectorAll('.compose-block');
-    // 第一个 block（主模板）不允许删除
     if (blocks[0] && blocks[0].id === blockId) {
         alert('主模板（第 1 段）不能删除。');
         return;
@@ -1164,7 +1149,6 @@ function removeComposeBlock(blockId) {
     _refreshComposeLabels();
 }
 
-/** 清空所有内容，恢复初始默认文本框 */
 function clearCompose() {
     var container = document.getElementById('compose-blocks');
     container.innerHTML =
@@ -1221,10 +1205,6 @@ function clearCompose() {
     _loadSavedTemplateList();
 }
 
-/**
- * 合成：把主模板中的「插入N」逐一替换为第 N+1 个文本框的内容，
- * 结果显示在右侧并复制到剪贴板。
- */
 function synthesizeCompose() {
     var container = document.getElementById('compose-blocks');
     var blocks = Array.from(container.querySelectorAll('.compose-block'));
@@ -1234,27 +1214,23 @@ function synthesizeCompose() {
         return;
     }
 
-    // 取主模板（第 0 块）
     var templateTA = blocks[0].querySelector('textarea');
     if (!templateTA) { alert('找不到主模板文本框！'); return; }
     var result = templateTA.value;
 
-    // 依次替换：第 i 块（i>=1）的内容替换「插入i」
     for (var i = 1; i < blocks.length; i++) {
         var insertTA = blocks[i].querySelector('textarea');
         if (!insertTA) continue;
         var insertContent = insertTA.value;
-        if (!insertContent) continue; // 如果用户不输入，就当做不存在，跳过替换
+        if (!insertContent) continue;
 
         var marker = '插入' + i;
-        // 全局替换（split/join 不依赖 replaceAll 兼容性）
         result = result.split(marker).join(insertContent);
     }
 
     var resultArea = document.getElementById('compose-result');
     resultArea.value = result;
 
-    // 复制到剪贴板
     var statusEl = document.getElementById('compose-status');
     function showComposeSuccess() {
         statusEl.textContent = '✅ 已合成并复制到剪贴板！共 ' + result.length.toLocaleString() + ' 字符。';
@@ -1273,7 +1249,6 @@ function synthesizeCompose() {
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(result).then(showComposeSuccess).catch(function () {
-            // fallback
             try { resultArea.select(); document.execCommand('copy'); showComposeSuccess(); }
             catch (e) { showComposeError(); }
         });
@@ -1326,7 +1301,6 @@ function saveTemplate() {
     saved[name] = content;
     _putSavedTemplates(saved);
     _loadSavedTemplateList();
-    // 选中刚保存的项
     var sel = document.getElementById('saved-templates-select');
     if (sel) sel.value = name;
     nameInput.value = '';
@@ -1369,8 +1343,6 @@ function _showSaveStatus(msg) {
     statusEl.style.borderColor = '#a5d6a7';
     setTimeout(function () { statusEl.style.display = 'none'; }, 3500);
 }
-
-// 页面加载时初始化已保存列表（在上方统一的 DOMContentLoaded 中处理）
 
 </script>
 </body>
