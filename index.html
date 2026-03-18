@@ -2,10 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V6.7</title>
+    <title>AI 全能转换神器 V6.8</title>
     <!-- Markdown 解析 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- JSZip：用于 xlsx 分页预览 XML 后处理 -->
+    <!-- JSZip：用于 xlsx 分页预览 XML 后处理及 docx 页脚注入 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <!-- ExcelJS：生成真实带格式的 .xlsx（支持字体/字号/颜色/合并/打印设置） -->
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -223,7 +223,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V6.7</span>
+    <span class="version-badge">V6.8</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -330,7 +330,7 @@
                 placeholder="粘贴文章...&#10;&#10;如果是双语提取模式，将自动提取纯英文；&#10;如果是单语言模式，将直接按不超过 7650 字符切割。"
                 style="flex:1;min-height:300px;"></textarea>
             <div style="margin-top:10px;font-size:12px;color:#888;line-height:1.6;">
-                每段上限 <strong>7,650</strong> 字符 · 按句子边界安全切割
+                每段上限 <strong>7,650</strong> 字符 · 按句子边界安全切割 · 完美保留原换行格式
             </div>
         </div>
         <div class="box" style="flex:2;overflow:hidden;display:flex;flex-direction:column;">
@@ -482,25 +482,9 @@ function translateMathSymbols(text) {
 function disableMarkdownLists(text) {
     return text.replace(/^(\s*\d+)\./gm, '$1\\.');
 }
-function smartExtractEnglish(rawText) {
-    return rawText.split('\n').map(function (line) {
-        if (!line.trim()) return '';
-        if (/[\u4e00-\u9fa5]/.test(line)) {
-            var eng = (line.replace(/[\u4e00-\u9fa5]/g, '').match(/[a-zA-Z]/g) ||[]).length;
-            if (eng < 5) return null;
-            return line
-                .replace(/[\u4e00-\u9fa5]|[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]/g, '')
-                .replace(/\(\s*\)/g, '').replace(/\s+/g, ' ')
-                .replace(/\*\*\s+/g, '**').replace(/\s+\*\*/g, '**').trim();
-        }
-        return line;
-    }).filter(function (l) { return l !== null; }).join('\n');
-}
 
 // ══════════════════════════════════════════════════════
 // 文件名提取
-// 支持：## 普通标题、## <span ...>3.8 Title 中文</span>
-// 规则：去 HTML 标签 → 去中文 → 去非法字符 → 取英文部分
 // ══════════════════════════════════════════════════════
 function extractEnglishFilename(text) {
     if (!text) return null;
@@ -552,13 +536,11 @@ function cleanupList(html) {
 }
 
 // ══════════════════════════════════════════════════════
-// Word (.docx) 生成（自带底部居中页码）
+// Word (.docx) 生成及底层注入页脚页码 (利用 JSZip)
 // ══════════════════════════════════════════════════════
 function buildFullHtml(bodyContent) {
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
         'body{font-family:Calibri,"宋体",sans-serif;font-size:14pt;line-height:1.6;margin:2.54cm;}' +
-        '@page WordSection1 { mso-footer: f1; } ' +
-        'div.WordSection1 { page: WordSection1; } ' +
         'p,li,div{font-size:14pt;line-height:150%;margin-bottom:10pt;text-align:left;}' +
         'strong{font-weight:bold;}' +
         'h1,h2,h3,h4,h5{color:#2E74B5;margin-bottom:15pt;}' +
@@ -566,13 +548,59 @@ function buildFullHtml(bodyContent) {
         'table{border-collapse:collapse;width:100%;margin:15px 0;}' +
         'td,th{border:1px solid #000;padding:8px;font-size:14pt;}' +
         'th{background-color:#f2f2f2;font-weight:bold;}' +
-        '</style></head><body>' +
-        '<div class="WordSection1">' + bodyContent + 
-        '<div style="mso-element:footer" id="f1">' +
-        '<p class="MsoFooter" style="text-align:center;margin:0;"><span style="mso-field-code:\' PAGE \'"></span></p>' +
-        '</div></div></body></html>';
+        '</style></head><body>' + bodyContent + '</body></html>';
 }
-function downloadDocx(bodyContent, filename) {
+
+// 拦截生成的 docx blob，注入标准底部居中页脚 XML
+async function addPageNumberToDocx(blob) {
+    if (typeof JSZip === 'undefined') return blob;
+    try {
+        var zip = await JSZip.loadAsync(blob);
+        
+        // 1. 添加 footer1.xml
+        var footerXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+            '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">\n' +
+            '  <w:p>\n' +
+            '    <w:pPr><w:jc w:val="center"/></w:pPr>\n' +
+            '    <w:r><w:fldChar w:fldCharType="begin"/></w:r>\n' +
+            '    <w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>\n' +
+            '    <w:r><w:fldChar w:fldCharType="end"/></w:r>\n' +
+            '  </w:p>\n' +
+            '</w:ftr>';
+        zip.file('word/footer1.xml', footerXml);
+        
+        // 2. 注入 [Content_Types].xml 声明
+        var contentTypes = await zip.file('[Content_Types].xml').async('text');
+        if (contentTypes.indexOf('wordprocessingml.footer+xml') === -1) {
+            contentTypes = contentTypes.replace('</Types>', '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>');
+            zip.file('[Content_Types].xml', contentTypes);
+        }
+        
+        // 3. 注入 word/_rels/document.xml.rels 关联
+        var rels = await zip.file('word/_rels/document.xml.rels').async('text');
+        if (rels.indexOf('footer1.xml') === -1) {
+            rels = rels.replace('</Relationships>', '<Relationship Id="rIdFooter1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>');
+            zip.file('word/_rels/document.xml.rels', rels);
+        }
+        
+        // 4. 在 word/document.xml 挂载引用
+        var docXml = await zip.file('word/document.xml').async('text');
+        var ftrRef = '<w:footerReference w:type="default" r:id="rIdFooter1"/>';
+        if (docXml.indexOf('<w:sectPr') !== -1) {
+            docXml = docXml.replace(/(<w:sectPr[^>]*>)/, '$1' + ftrRef);
+        } else {
+            docXml = docXml.replace('</w:body>', '<w:sectPr>' + ftrRef + '</w:sectPr></w:body>');
+        }
+        zip.file('word/document.xml', docXml);
+        
+        return await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    } catch (e) {
+        console.warn('Word 页码注入失败，将返回不带页脚的文件:', e);
+        return blob;
+    }
+}
+
+async function downloadDocx(bodyContent, filename) {
     if (typeof htmlDocx === 'undefined') {
         alert('html-docx-js 库未加载，请检查网络后刷新。');
         return;
@@ -581,6 +609,10 @@ function downloadDocx(bodyContent, filename) {
         orientation: 'portrait',
         margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
     });
+    
+    // 拦截并自动注入底部居中页码
+    blob = await addPageNumberToDocx(blob);
+    
     triggerDownload(blob, filename.replace(/\.doc$/, '.docx'),
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 }
@@ -657,7 +689,7 @@ function buildExcelWorksheet(ws, titleText, parsed) {
     ws.pageSetup.horizontalCentered = true;
     ws.pageSetup.printTitlesRow     = '1:2';
     
-    // 添加底部居中页码
+    // 自动在 Excel 底部居中加入数字页码 (&C 代表居中, &P 代表页码)
     ws.headerFooter = { oddFooter: '&C&P' };
 
     ws.views =[{
@@ -923,7 +955,7 @@ function downloadHtmlWord() {
 }
 
 // ══════════════════════════════════════════════════════
-// 5. 文本切割 (双语 / 单语言)
+// 5. 文本切割 (双语 / 单语言) - 完美保留格式
 // ══════════════════════════════════════════════════════
 var MAX_CHUNK = 7650;
 
@@ -956,38 +988,62 @@ function extractPureEnglish(rawText) {
             }
         }
     });
+    // 使用 \n 还原行块，并清理过多连续的空行
     return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// 修复：确保数字间的小数点不会造成错误切割，且保证不遗漏字符
+// 将文本按断句符号并严格保留回车换行提取为词元 (Token) 数组
 function splitIntoSentences(text) {
-    var raw = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-    var sentences = [];
-    var re = /(.*?[.!?]["')\]]*)(?:\s+|$)/g;
-    var match;
-    var lastIndex = 0;
-    while ((match = re.exec(raw)) !== null) {
-        if (match[0].length === 0) {
-            re.lastIndex++;
-            continue;
+    var tokens =[];
+    // 强制使用换行符群组作为一级切片依据，将换行保留在数组中
+    var paragraphs = text.split(/(\n+)/); 
+    
+    for (var i = 0; i < paragraphs.length; i++) {
+        var p = paragraphs[i];
+        if (!p) continue;
+        // 如果是纯换行符，原样推入词元中保留
+        if (/^\n+$/.test(p)) {
+            tokens.push(p);
+        } else {
+            // 对实际文本内容按标点和随后的空白字符（含空格，不含换行）切片
+            var reSent = /(.*?[.!?]["')\]]*)(?:\s+|$)/g;
+            var sMatch;
+            var lastIndex = 0;
+            while ((sMatch = reSent.exec(p)) !== null) {
+                if (sMatch[0].length === 0) {
+                    reSent.lastIndex++;
+                    continue;
+                }
+                tokens.push(sMatch[0]); // 自动包含其自身句尾空格
+                lastIndex = reSent.lastIndex;
+            }
+            var remaining = p.slice(lastIndex);
+            if (remaining) tokens.push(remaining);
         }
-        var s = match[1].trim();
-        if (s) sentences.push(s);
-        lastIndex = re.lastIndex;
     }
-    var remaining = raw.slice(lastIndex).trim();
-    if (remaining) sentences.push(remaining);
-    return sentences;
+    return tokens;
 }
 
-function chunkSentences(sentences, maxLen) {
-    var chunks =[], current = '';
-    sentences.forEach(function (s) {
-        var candidate = current ? current + ' ' + s : s;
-        if (candidate.length <= maxLen) { current = candidate; }
-        else { if (current) chunks.push(current); current = s; }
-    });
-    if (current) chunks.push(current);
+// 用保存了格式的词元 (Token) 进行合并拼接，严格保留原格式
+function chunkSentences(tokens, maxLen) {
+    var chunks =[];
+    var current = '';
+    
+    for (var i = 0; i < tokens.length; i++) {
+        var token = tokens[i];
+        if (current.length + token.length <= maxLen) {
+            current += token;
+        } else {
+            if (current.trim()) {
+                chunks.push(current.trim());
+            }
+            current = token;
+        }
+    }
+    if (current.trim()) {
+        chunks.push(current.trim());
+    }
+    
     return chunks;
 }
 
@@ -1011,11 +1067,11 @@ function processVoiceover() {
             totalInfo.textContent = ''; countBar.classList.remove('show'); return;
         }
     } else {
-        targetText = raw.trim(); // 单语言模式下直接使用原始文本
+        targetText = raw.trim(); // 单语言模式保留原本文字结构
     }
 
-    var sentences = splitIntoSentences(targetText);
-    var chunks    = chunkSentences(sentences, MAX_CHUNK);
+    var tokens = splitIntoSentences(targetText);
+    var chunks = chunkSentences(tokens, MAX_CHUNK);
 
     totalInfo.textContent = '共 ' + chunks.length + ' 段';
     countBar.textContent  = '✅ 总字符：' + targetText.length + ' | 已切割为 ' + chunks.length + ' 段（每段上限 ' + MAX_CHUNK + ' 字符）';
@@ -1027,6 +1083,7 @@ function processVoiceover() {
         var isNear = len > 7000;
         var block  = document.createElement('div');
         block.className = 'chunk-block';
+        // HTML 转义确保 textarea 能够正常显示，同时保留 \n 等文本特有属性
         var safe = chunk.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         block.innerHTML =
             '<div class="chunk-header">' +
