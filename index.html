@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V7.0</title>
+    <title>AI 全能转换神器 V7.1</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -208,7 +208,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V7.0</span>
+    <span class="version-badge">V7.1</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -736,11 +736,12 @@ async function downloadExcel() {
         var input    = document.getElementById('excel-input').value;
         var engName  = (extractEnglishFilename(input) || 'AI_Complete_Table').substring(0, 80);
         var workbook = new ExcelJS.Workbook();
-        workbook.creator = 'AI 全能转换神器 V7.0';
+        workbook.creator = 'AI 全能转换神器 V7.1';
         workbook.created = new Date();
 
-        // 用于去重 Sheet 名
-        var usedSheetNames = {};
+        // 前两张 Sheet 硬编码名称，第三张起动态提取标题
+        var fixedSheetNames = ['语块', '单词'];
+        var usedSheetNames  = {};
 
         Array.from(tables).forEach(function (table, i) {
             var parsed = tableToArray(table);
@@ -748,7 +749,7 @@ async function downloadExcel() {
             // 跳过空表，防止 buildExcelWorksheet 内部崩溃
             if (!parsed || parsed.cols === 0 || parsed.data.length === 0) return;
 
-            // 提取 Sheet 名：取表格前最近的标题元素
+            // 提取标题文本（用于标题行，不影响 Sheet 名）
             var titleText = '';
             var prev = table.previousElementSibling;
             while (prev) {
@@ -757,20 +758,25 @@ async function downloadExcel() {
             }
             if (!titleText) titleText = '表格' + (i + 1);
 
-            // 清理非法字符并截断到 28 字符（给重复后缀留余量）
-            var baseName = titleText
-                .replace(/[:\\\/\?\*\[\]]/g, '')   // Excel 不允许的字符
-                .replace(/\s+/g, ' ')
-                .trim()
-                .substring(0, 28)
-                .trim();
-            if (!baseName) baseName = 'Sheet' + (i + 1);
+            // Sheet 名：前两张硬编码，之后从标题动态提取
+            var wsName;
+            if (i < fixedSheetNames.length) {
+                wsName = fixedSheetNames[i];
+            } else {
+                var baseName = titleText
+                    .replace(/[:\\\/\?\*\[\]]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .substring(0, 28)
+                    .trim();
+                if (!baseName) baseName = 'Sheet' + (i + 1);
+                wsName = baseName;
+            }
 
-            // 处理重名：Sheet名相同时加 _2、_3 后缀
-            var wsName = baseName;
+            // 处理重名：Sheet 名相同时加 _2、_3 后缀
             var suffix = 2;
             while (usedSheetNames[wsName]) {
-                wsName = baseName + '_' + suffix;
+                wsName = wsName.replace(/_\d+$/, '') + '_' + suffix;
                 suffix++;
             }
             usedSheetNames[wsName] = true;
