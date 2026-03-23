@@ -846,8 +846,8 @@ function downloadSplitWord() {
 // ══════════════════════════════════════════════════════
 function renderHtml() {
     var rawHtml = document.getElementById('html-input').value;
-    // 去除 <script>...</script> 块，防止在预览区执行恶意脚本
-    var safeHtml = rawHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    // 去除 script 标签块，防止在预览区执行恶意脚本
+    var safeHtml = rawHtml.replace(/<scr\x69pt\b[^<]*(?:(?!<\/scr\x69pt>)<[^<]*)*<\/scr\x69pt>/gi, '');
     document.getElementById('html-preview').innerHTML = safeHtml;
 }
 function downloadHtmlWord() {
@@ -868,8 +868,8 @@ function splitIntoSentences(text) {
         var p = paragraphs[i];
         if (!p) continue;
         if (/^\n+$/.test(p)) { tokens.push(p); continue; }
-        // 增加了对中英文智能引号 \u201C\u201D\u2018\u2019 的支持
-        var reSent = /(.*?(?:[.!?]+["\u201C\u201D\u2018\u2019')\]]*|[。！？]+[」』\u201C\u201D\u2018\u2019【】》]*|……+))(?:\s+|(?=[^\s])|$)/g;
+        // 增加了对中英文智能引号 \u201C\u201D\u2018\u2019 的支持（使用 new RegExp 避免字面量转义问题）
+        var reSent = new RegExp('(.*?(?:[.!?]+["\u201C\u201D\u2018\u2019' + "'" + ')\\]]*|[\u3002\uff01\uff1f]+[\u300d\u300f\u201C\u201D\u2018\u2019\u3010\u3011\u300b]*|\u2026+))(?:\\s+|(?=[^\\s])|$)', 'g');
         var lastIndex = 0, sMatch;
         while ((sMatch = reSent.exec(p)) !== null) {
             if (sMatch[0].length === 0) { reSent.lastIndex++; continue; }
