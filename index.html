@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V7.1</title>
+    <title>AI 全能转换神器 V7.2</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -208,7 +208,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V7.1</span>
+    <span class="version-badge">V7.2</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -338,19 +338,21 @@
             <button class="action-btn green" onclick="addComposeBlock()">➕ 增加文本框</button>
             <button class="action-btn clear" onclick="clearCompose()">🗑️ 清空重置</button>
         </div>
+        <!-- ★ PATCH 3：占位符改为 [插入N] 格式，提示文字同步更新 -->
         <div class="compose-tip">
-            <strong>使用方法：</strong>在第 1 段（主模板）中，用 <strong>插入1</strong>、<strong>插入2</strong> 等标记插入位置；
-            第 2 段替换"插入1"，第 3 段替换"插入2"，依此类推。<br>
+            <strong>使用方法：</strong>在第 1 段（主模板）中，用 <strong>[插入1]</strong>、<strong>[插入2]</strong> 等标记插入位置；
+            第 2 段替换"[插入1]"，第 3 段替换"[插入2]"，依此类推。<br>
             点击 <strong>⚡ 合成并复制</strong> 后结果显示在右侧并自动复制到剪贴板。
         </div>
         <div id="compose-blocks">
             <div class="compose-block" id="compose-block-0">
                 <div class="compose-block-header">
-                    <span class="compose-block-label primary">📋 第 1 段 — 主模板（在需要插入的地方写"插入1"、"插入2"…）</span>
+                    <!-- ★ PATCH 3：主模板提示文字同步 -->
+                    <span class="compose-block-label primary">📋 第 1 段 — 主模板（在需要插入的地方写"[插入1]"、"[插入2]"…）</span>
                     <button class="block-clear-btn" onclick="clearBlockText('compose-text-0')">🧹 清空此段</button>
                 </div>
                 <textarea class="chunk-textarea" id="compose-text-0" style="min-height:180px;"
-                    placeholder="粘贴主指令模板。&#10;&#10;插入第 2 段的地方写：插入1&#10;插入第 3 段的地方写：插入2"></textarea>
+                    placeholder="粘贴主指令模板。&#10;&#10;插入第 2 段的地方写：[插入1]&#10;插入第 3 段的地方写：[插入2]"></textarea>
                 <div class="save-panel" style="margin-top:10px;">
                     <div class="save-panel-title">💾 常用指令保存 / 加载</div>
                     <div class="save-row">
@@ -367,23 +369,23 @@
             </div>
             <div class="compose-block" id="compose-block-1">
                 <div class="compose-block-header">
-                    <span class="compose-block-label secondary">📄 第 2 段 — 将替换主模板中的「插入1」</span>
+                    <span class="compose-block-label secondary">📄 第 2 段 — 将替换主模板中的「[插入1]」</span>
                     <div style="display:flex;gap:6px;">
                         <button class="block-clear-btn" onclick="clearBlockText('compose-text-1')">🧹 清空此段</button>
                         <button class="action-btn clear" style="padding:5px 14px;font-size:12px;" onclick="removeComposeBlock('compose-block-1')">🗑️ 删除此段</button>
                     </div>
                 </div>
-                <textarea class="chunk-textarea" id="compose-text-1" style="min-height:120px;" placeholder="粘贴要替换「插入1」的文字..."></textarea>
+                <textarea class="chunk-textarea" id="compose-text-1" style="min-height:120px;" placeholder="粘贴要替换「[插入1]」的文字..."></textarea>
             </div>
             <div class="compose-block" id="compose-block-2">
                 <div class="compose-block-header">
-                    <span class="compose-block-label secondary">📄 第 3 段 — 将替换主模板中的「插入2」</span>
+                    <span class="compose-block-label secondary">📄 第 3 段 — 将替换主模板中的「[插入2]」</span>
                     <div style="display:flex;gap:6px;">
                         <button class="block-clear-btn" onclick="clearBlockText('compose-text-2')">🧹 清空此段</button>
                         <button class="action-btn clear" style="padding:5px 14px;font-size:12px;" onclick="removeComposeBlock('compose-block-2')">🗑️ 删除此段</button>
                     </div>
                 </div>
-                <textarea class="chunk-textarea" id="compose-text-2" style="min-height:120px;" placeholder="粘贴要替换「插入2」的文字..."></textarea>
+                <textarea class="chunk-textarea" id="compose-text-2" style="min-height:120px;" placeholder="粘贴要替换「[插入2]」的文字..."></textarea>
             </div>
         </div>
     </div>
@@ -452,7 +454,7 @@ function disableMarkdownLists(text) {
 }
 
 // ══════════════════════════════════════════════════════
-// 文件名提取
+// ★ PATCH 6：文件名提取——保留中文，只过滤非法文件名字符
 // ══════════════════════════════════════════════════════
 function extractEnglishFilename(text) {
     if (!text) return null;
@@ -460,8 +462,9 @@ function extractEnglishFilename(text) {
     var htmlMatch = text.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
     var heading   = mdMatch ? mdMatch[1] : (htmlMatch ? htmlMatch[1] : null);
     if (!heading) { var fl = text.trim().split('\n')[0].trim(); if (fl) heading = fl; else return null; }
+    // 清理 HTML 标签和 Markdown 强调符号
     heading = heading.replace(/<[^>]+>/g, ' ').replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '');
-    heading = heading.replace(/[\u4e00-\u9fa5\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b\u3010\u3011\uff01]/g, '');
+    // ★ 保留中文字符，只过滤文件系统不允许的特殊符号（不删光中文）
     heading = heading.replace(/[\\\/:\*\?"<>\|#《》]/g, '').replace(/\s+/g, ' ').trim().replace(/[\.\s\-_]+$/, '').trim();
     if (heading.length > 80) heading = heading.substring(0, 80).trim();
     return heading.length > 0 ? heading : null;
@@ -551,7 +554,6 @@ function _cellToRichRuns(cellEl) {
     return runs.length ? runs : null;
 }
 
-// 从 HTML table 元素解析二维数据
 function tableToArray(table) {
     var rows = table.querySelectorAll('tr');
     var data = [], richData = [], maxCols = 0;
@@ -579,11 +581,6 @@ function mkBorder(hex) {
 
 // ══════════════════════════════════════════════════════
 // ExcelJS：构建单个 Worksheet
-// 修复要点：
-//   1. cols===0 时直接返回，防止空表崩溃
-//   2. cols===1 时跳过 mergeCells（ExcelJS 不允许合并单个单元格）
-//   3. 标题行合并后不再尝试单独设置已合并区域内的格子样式
-//   4. 列宽计算移至数据写完后，保证 getColumn 调用合法
 // ══════════════════════════════════════════════════════
 function buildExcelWorksheet(ws, titleText, parsed) {
     var data = parsed.data;
@@ -591,12 +588,10 @@ function buildExcelWorksheet(ws, titleText, parsed) {
     var phoneticColIdx = parsed.phoneticColIdx;
     var chunkColIdx = parsed.chunkColIdx;
 
-    // 防御：空表直接返回
     if (!data || data.length === 0 || cols === 0) return;
 
     var hasCN = function (s) { return /[\u4e00-\u9fa5]/.test(s || ''); };
 
-    // 页面设置
     ws.pageSetup.orientation = 'landscape';
     ws.pageSetup.paperSize = 9;
     ws.pageSetup.fitToPage = true;
@@ -607,22 +602,15 @@ function buildExcelWorksheet(ws, titleText, parsed) {
     ws.headerFooter = { oddFooter: '&C&P' };
     ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 2, topLeftCell: 'A3', zoomScale: 75 }];
 
-    // ── 第 1 行：标题行 ──
     ws.getRow(1).height = 45;
     var titleCell = ws.getCell(1, 1);
-    // 只有多列时才合并；单列时直接设置 A1 即可
-    if (cols > 1) {
-        ws.mergeCells(1, 1, 1, cols);
-    }
+    if (cols > 1) { ws.mergeCells(1, 1, 1, cols); }
     titleCell.value     = titleText || '';
     titleCell.font      = { name: 'SimSun', size: 20, bold: true, color: { argb: 'FF1F4E79' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
     titleCell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDEEAF1' } };
     titleCell.border    = mkBorder('4472C4');
-    // 合并后不能再单独访问合并区域内的非主格，只设置主格样式即可
-    // （原代码 for tc=2..cols 会触发 ExcelJS "Cannot read merged cell" 错误，已删除）
 
-    // ── 第 2 行起：表头 + 数据行 ──
     data.forEach(function (row, rIdx) {
         var excelRowNum = rIdx + 2;
         var isHeader    = (rIdx === 0);
@@ -671,7 +659,6 @@ function buildExcelWorksheet(ws, titleText, parsed) {
         }
     });
 
-    // ── 列宽自适应（数据全部写完后再设置，确保合法） ──
     for (var col = 0; col < cols; col++) {
         var maxW = 8;
         data.forEach(function (row) {
@@ -710,7 +697,7 @@ function downloadWord() {
 }
 
 // ══════════════════════════════════════════════════════
-// 2. 表格转 Excel（彻底重写 downloadExcel）
+// 2. 表格转 Excel
 // ══════════════════════════════════════════════════════
 function renderExcel() {
     document.getElementById('excel-preview').innerHTML =
@@ -720,14 +707,8 @@ function renderExcel() {
 async function downloadExcel() {
     var previewEl = document.getElementById('excel-preview');
     var tables    = previewEl.querySelectorAll('table');
-    if (tables.length === 0) {
-        alert('未检测到表格，请确保输入内容包含 Markdown 表格！');
-        return;
-    }
-    if (typeof ExcelJS === 'undefined') {
-        alert('ExcelJS 库未加载，请检查网络连接后刷新页面。');
-        return;
-    }
+    if (tables.length === 0) { alert('未检测到表格，请确保输入内容包含 Markdown 表格！'); return; }
+    if (typeof ExcelJS === 'undefined') { alert('ExcelJS 库未加载，请检查网络连接后刷新页面。'); return; }
 
     var btn = document.getElementById('btn-download-excel');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中...'; }
@@ -736,20 +717,16 @@ async function downloadExcel() {
         var input    = document.getElementById('excel-input').value;
         var engName  = (extractEnglishFilename(input) || 'AI_Complete_Table').substring(0, 80);
         var workbook = new ExcelJS.Workbook();
-        workbook.creator = 'AI 全能转换神器 V7.1';
+        workbook.creator = 'AI 全能转换神器 V7.2';
         workbook.created = new Date();
 
-        // 前两张 Sheet 硬编码名称，第三张起动态提取标题
         var fixedSheetNames = ['语块', '单词'];
         var usedSheetNames  = {};
 
         Array.from(tables).forEach(function (table, i) {
             var parsed = tableToArray(table);
-
-            // 跳过空表，防止 buildExcelWorksheet 内部崩溃
             if (!parsed || parsed.cols === 0 || parsed.data.length === 0) return;
 
-            // 提取标题文本（用于标题行，不影响 Sheet 名）
             var titleText = '';
             var prev = table.previousElementSibling;
             while (prev) {
@@ -758,48 +735,31 @@ async function downloadExcel() {
             }
             if (!titleText) titleText = '表格' + (i + 1);
 
-            // Sheet 名：前两张硬编码，之后从标题动态提取
             var wsName;
             if (i < fixedSheetNames.length) {
                 wsName = fixedSheetNames[i];
             } else {
-                var baseName = titleText
-                    .replace(/[:\\\/\?\*\[\]]/g, '')
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .substring(0, 28)
-                    .trim();
+                var baseName = titleText.replace(/[:\\\/\?\*\[\]]/g, '').replace(/\s+/g, ' ').trim().substring(0, 28).trim();
                 if (!baseName) baseName = 'Sheet' + (i + 1);
                 wsName = baseName;
             }
 
-            // 处理重名：Sheet 名相同时加 _2、_3 后缀
             var suffix = 2;
-            while (usedSheetNames[wsName]) {
-                wsName = wsName.replace(/_\d+$/, '') + '_' + suffix;
-                suffix++;
-            }
+            while (usedSheetNames[wsName]) { wsName = wsName.replace(/_\d+$/, '') + '_' + suffix; suffix++; }
             usedSheetNames[wsName] = true;
 
             var ws = workbook.addWorksheet(wsName);
             buildExcelWorksheet(ws, titleText, parsed);
         });
 
-        // 工作簿为空（所有表都跳过）时提前退出
-        if (workbook.worksheets.length === 0) {
-            alert('所有检测到的表格均为空，无法生成 Excel 文件。');
-            return;
-        }
+        if (workbook.worksheets.length === 0) { alert('所有检测到的表格均为空，无法生成 Excel 文件。'); return; }
 
         var buffer = await workbook.xlsx.writeBuffer();
 
-        // 注入 pageBreakPreview 视图（可选增强，失败不影响主流程）
         if (typeof JSZip !== 'undefined') {
             try {
                 var zip = await JSZip.loadAsync(buffer);
-                var sheetFiles = Object.keys(zip.files).filter(function (f) {
-                    return /^xl\/worksheets\/sheet\d+\.xml$/.test(f);
-                });
+                var sheetFiles = Object.keys(zip.files).filter(function (f) { return /^xl\/worksheets\/sheet\d+\.xml$/.test(f); });
                 for (var si = 0; si < sheetFiles.length; si++) {
                     var xml = await zip.file(sheetFiles[si]).async('text');
                     xml = xml.replace(/<sheetView\b([^>]*?)>/g, function (match, attrs) {
@@ -809,9 +769,7 @@ async function downloadExcel() {
                     zip.file(sheetFiles[si], xml);
                 }
                 buffer = await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
-            } catch (zipErr) {
-                console.warn('pageBreakPreview 注入失败（不影响文件）:', zipErr);
-            }
+            } catch (zipErr) { console.warn('pageBreakPreview 注入失败（不影响文件）:', zipErr); }
         }
 
         triggerDownload(
@@ -830,31 +788,42 @@ async function downloadExcel() {
 // ══════════════════════════════════════════════════════
 // 3. 双语分离转 Word
 // ══════════════════════════════════════════════════════
+// ★ PATCH 1：扩展汉字覆盖范围，降低英文字母阈值至 3，加强全角标点清理
 function extractPureEnglish(rawText) {
     var lines = rawText.split('\n'), result = [];
+    // 覆盖基础汉字区 + CJK扩展A区 + CJK扩展B区
+    var cnCharRegex = /[\u4e00-\u9fa5\u3400-\u4DBF]/;
+    var cnCharGlobal = /[\u4e00-\u9fa5\u3400-\u4DBF]/g;
+    // 全角标点：CJK符号、全角ASCII、弯引号、省略号、间隔号等
+    var cnPunctuationRegex = /[\u3000-\u303F\uFF00-\uFFEF\u2018\u2019\u201C\u201D\u2026\u00B7]/g;
+
     lines.forEach(function (line) {
         var trimmed = line.trim();
         if (!trimmed) { result.push(''); return; }
-        if (!/[\u4e00-\u9fa5]/.test(line)) {
+        if (!cnCharRegex.test(line)) {
+            // 纯英文行：清理 Markdown 标记后保留
             var clean = line.replace(/^#+\s*/g, '').replace(/\*\*/g, '').replace(/\*/g, '')
                 .replace(/^[-*]\s+/g, '').replace(/^\d+\.\s+/g, '').trim();
             if (clean) result.push(clean);
         } else {
-            var engCount = (line.replace(/[\u4e00-\u9fa5]/g, '').match(/[a-zA-Z]/g) || []).length;
-            if (engCount >= 5) {
+            // 中英混合行：降低阈值到 3，避免漏掉短语如 "OK.", "I see."
+            var engCount = (line.match(/[a-zA-Z]/g) || []).length;
+            if (engCount >= 3) {
                 var cleaned = line
-                    .replace(/[\u4e00-\u9fa5]/g, '')
-                    .replace(/[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b\uff01]/g, '')
+                    .replace(cnCharGlobal, ' ')          // 中文字符→空格
+                    .replace(cnPunctuationRegex, ' ')    // 全角标点→空格
                     .replace(/^#+\s*/g, '').replace(/\*\*/g, '').replace(/\*/g, '')
                     .replace(/^[-*]\s+/g, '').replace(/^\d+\.\s+/g, '')
-                    .replace(/\(\s*\)/g, '').replace(/\s+/g, ' ').trim();
-                if (cleaned) result.push(cleaned);
+                    .replace(/\(\s*\)|\[\s*\]/g, '')     // 移除因删中文产生的空括号
+                    .replace(/\s{2,}/g, ' ')
+                    .trim();
+                // 确保提取结果含有英文字母，排除纯数字/符号残留
+                if (cleaned && /[a-zA-Z]/.test(cleaned)) result.push(cleaned);
             }
         }
     });
     return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
-// smartExtractEnglish 是 extractPureEnglish 的别名，两处调用统一
 function smartExtractEnglish(rawText) { return extractPureEnglish(rawText); }
 
 function renderSplit() {
@@ -873,8 +842,14 @@ function downloadSplitWord() {
 
 // ══════════════════════════════════════════════════════
 // 4. HTML 代码转 Word
+// ★ PATCH 4：预览前过滤 <script> 标签，防止 XSS
 // ══════════════════════════════════════════════════════
-function renderHtml() { document.getElementById('html-preview').innerHTML = document.getElementById('html-input').value; }
+function renderHtml() {
+    var rawHtml = document.getElementById('html-input').value;
+    // 去除 <script>...</script> 块，防止在预览区执行恶意脚本
+    var safeHtml = rawHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    document.getElementById('html-preview').innerHTML = safeHtml;
+}
 function downloadHtmlWord() {
     var raw = document.getElementById('html-input').value;
     downloadDocx(cleanupList(hrToPageBreak(raw)), (extractEnglishFilename(raw) || 'HTML_to_Doc') + '.docx');
@@ -886,14 +861,15 @@ function downloadHtmlWord() {
 var MAX_CHUNK = 7650;
 function clearVoiceover() { document.getElementById('voiceover-input').value = ''; processVoiceover(); }
 
-// 支持中英文断句的分句函数
+// ★ PATCH 2：优化断句正则，增加中英文智能引号支持 " " ' '
 function splitIntoSentences(text) {
     var tokens = [], paragraphs = text.split(/(\n+)/);
     for (var i = 0; i < paragraphs.length; i++) {
         var p = paragraphs[i];
         if (!p) continue;
         if (/^\n+$/.test(p)) { tokens.push(p); continue; }
-        var reSent = /(.*?(?:[.!?]["')\]]*|[。！？…]+[」』"'】》]?))(?:\s+|(?=[^\s])|$)/g;
+        // 增加了对中英文智能引号 \u201C\u201D\u2018\u2019 的支持
+        var reSent = /(.*?(?:[.!?]+["\u201C\u201D\u2018\u2019')\]]*|[。！？]+[」』\u201C\u201D\u2018\u2019【】》]*|……+))(?:\s+|(?=[^\s])|$)/g;
         var lastIndex = 0, sMatch;
         while ((sMatch = reSent.exec(p)) !== null) {
             if (sMatch[0].length === 0) { reSent.lastIndex++; continue; }
@@ -973,21 +949,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // ══════════════════════════════════════════════════════
 // 6. 指令合成
+// ★ PATCH 3：占位符改为 [插入N] 格式，防止误伤用户文本中的"插入1"字样
 // ══════════════════════════════════════════════════════
-var _composeIdCounter = 3; // 全局单调递增，永不重置
+var _composeIdCounter = 3;
 
 function _refreshComposeLabels() {
     document.querySelectorAll('#compose-blocks .compose-block').forEach(function (block, i) {
         var labelEl = block.querySelector('.compose-block-label');
         if (!labelEl) return;
         if (i === 0) {
-            labelEl.textContent = '📋 第 1 段 — 主模板（在需要插入的地方写"插入1"、"插入2"…）';
+            labelEl.textContent = '📋 第 1 段 — 主模板（在需要插入的地方写"[插入1]"、"[插入2]"…）';
             labelEl.className   = 'compose-block-label primary';
         } else {
-            labelEl.textContent = '📄 第 ' + (i + 1) + ' 段 — 将替换主模板中的「插入' + i + '」';
+            labelEl.textContent = '📄 第 ' + (i + 1) + ' 段 — 将替换主模板中的「[插入' + i + ']」';
             labelEl.className   = 'compose-block-label secondary';
             var ta = block.querySelector('textarea');
-            if (ta) ta.placeholder = '粘贴要替换「插入' + i + '」的文字（保留原始格式）...';
+            if (ta) ta.placeholder = '粘贴要替换「[插入' + i + ']」的文字（保留原始格式）...';
         }
     });
 }
@@ -997,7 +974,7 @@ function addComposeBlock() {
     var uid = _composeIdCounter++;
     var container    = document.getElementById('compose-blocks');
     var currentCount = container.querySelectorAll('.compose-block').length;
-    var insertNum    = currentCount; // 新块是第 currentCount+1 块，对应「插入N」= currentCount
+    var insertNum    = currentCount;
     var div = document.createElement('div');
     div.className = 'compose-block'; div.id = 'compose-block-' + uid;
     div.innerHTML =
@@ -1006,7 +983,7 @@ function addComposeBlock() {
             '<button class="block-clear-btn" onclick="clearBlockText(\'compose-text-' + uid + '\')">🧹 清空此段</button>' +
             '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" onclick="removeComposeBlock(\'compose-block-' + uid + '\')">🗑️ 删除此段</button>' +
         '</div></div>' +
-        '<textarea class="chunk-textarea" id="compose-text-' + uid + '" style="min-height:120px;" placeholder="粘贴要替换「插入' + insertNum + '」的文字（保留原始格式）..."></textarea>';
+        '<textarea class="chunk-textarea" id="compose-text-' + uid + '" style="min-height:120px;" placeholder="粘贴要替换「[插入' + insertNum + ']」的文字（保留原始格式）..."></textarea>';
     container.appendChild(div);
     _refreshComposeLabels();
     div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1025,12 +1002,12 @@ function clearCompose() {
         var div = document.createElement('div'); div.className = 'compose-block'; div.id = 'compose-block-' + uid;
         div.innerHTML =
             '<div class="compose-block-header">' +
-            '<span class="compose-block-label secondary">📄 第 ' + segNum + ' 段 — 将替换主模板中的「插入' + insertNum + '」</span>' +
+            '<span class="compose-block-label secondary">📄 第 ' + segNum + ' 段 — 将替换主模板中的「[插入' + insertNum + ']」</span>' +
             '<div style="display:flex;gap:6px;">' +
                 '<button class="block-clear-btn" onclick="clearBlockText(\'compose-text-' + uid + '\')">🧹 清空此段</button>' +
                 '<button class="action-btn clear" style="padding:5px 14px;font-size:12px;" onclick="removeComposeBlock(\'compose-block-' + uid + '\')">🗑️ 删除此段</button>' +
             '</div></div>' +
-            '<textarea class="chunk-textarea" id="compose-text-' + uid + '" style="min-height:120px;" placeholder="粘贴要替换「插入' + insertNum + '」的文字（保留原始格式）..."></textarea>';
+            '<textarea class="chunk-textarea" id="compose-text-' + uid + '" style="min-height:120px;" placeholder="粘贴要替换「[插入' + insertNum + ']」的文字（保留原始格式）..."></textarea>';
         return div;
     }
     container.appendChild(makeBlock(_composeIdCounter++, 2, 1));
@@ -1048,7 +1025,8 @@ function synthesizeCompose() {
     for (var i = 1; i < blocks.length; i++) {
         var insertTA = blocks[i].querySelector('textarea');
         if (!insertTA || !insertTA.value) continue;
-        result = result.split('插入' + i).join(insertTA.value);
+        // ★ PATCH 3：使用带方括号的标记 [插入N]，大幅降低误伤概率
+        result = result.split('[插入' + i + ']').join(insertTA.value);
     }
     var resultArea = document.getElementById('compose-result'); resultArea.value = result;
     var statusEl = document.getElementById('compose-status');
@@ -1104,6 +1082,22 @@ function _showSaveStatus(msg) {
     el.style.background = '#e8f5e9'; el.style.borderColor = '#a5d6a7';
     setTimeout(function () { el.style.display = 'none'; }, 3500);
 }
+
+// ══════════════════════════════════════════════════════
+// ★ PATCH 5：离开页面防误触 —— beforeunload 提示
+// 只要任意主要输入区有内容（>50字符）就弹出确认框
+// ══════════════════════════════════════════════════════
+window.addEventListener('beforeunload', function (e) {
+    var ids = ['word-input', 'excel-input', 'split-input', 'html-input', 'voiceover-input', 'compose-text-0'];
+    var hasContent = ids.some(function (id) {
+        var el = document.getElementById(id);
+        return el && el.value && el.value.length > 50;
+    });
+    if (hasContent) {
+        e.preventDefault();
+        e.returnValue = ''; // Chrome 规范要求
+    }
+});
 </script>
 </body>
 </html>
