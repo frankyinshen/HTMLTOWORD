@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V7.3</title>
+    <title>AI 全能转换神器 V7.4</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -249,7 +249,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V7.3</span>
+    <span class="version-badge">V7.4</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -505,14 +505,18 @@ function extractEnglishFilename(text) {
 // HTML 处理辅助
 // ══════════════════════════════════════════════════════
 var RE_PB_DIV = /<div\s+style=["']page-break-after\s*:\s*always;?["']\s*>\s*<\/div>/gi;
-// ★ FIX 2: 使用 Word 标准分页符 XML，同时保留 mso-break-type
-var MSO_BREAK = '<p style="page-break-before:always;margin:0;padding:0;mso-break-type:section-break;"></p>';
+
+// ★ FIX 2 (V7.4): 唯一占位符策略 — html-docx-js 不支持任何 CSS 分页，
+// 唯一可靠做法：在 HTML 中插入可识别的纯文字占位符，
+// 生成 docx 后用 JSZip 在 document.xml 里定向替换为真正的 Word 分页符 XML。
+var PB_MARKER = 'WDPAGEBREAK_7F3A9C';   // 全局唯一，不会出现在正文中
+var MSO_BREAK = '<p>' + PB_MARKER + '</p>';   // 注入 HTML 的占位段落
 var VISUAL_BREAK = '<div class="page-break-line"></div>';
 
 function hrToVisual(html) {
-    return html.replace(/<hr\s*\/?>/gi, VISUAL_BREAK).replace(/<\/hr>/gi, '').replace(RE_PB_DIV, VISUAL_BREAK);
+    return html.replace(/<hr\s*\/?>/gi, VISUAL_BREAK).replace(/<hr\s[^>]*>/gi, VISUAL_BREAK).replace(/<\/hr>/gi, '').replace(RE_PB_DIV, VISUAL_BREAK);
 }
-// ★ FIX 2: 增强版分页符转换，同时处理 <hr> 标签的各种写法
+// 将 <hr> / RE_PB_DIV 转为占位段落，供 downloadDocx 内的 injectWordPageBreaks 替换
 function hrToPageBreak(html) {
     return html
         .replace(/<hr\s*\/?>/gi, MSO_BREAK)
@@ -525,9 +529,8 @@ function cleanupList(html) { return html.replace(/<li>\s*<p>/gi, '<li>').replace
 // ══════════════════════════════════════════════════════
 // ★ FIX 1 & 2: Word 生成 — A4 页面 + 强化分页符
 // ══════════════════════════════════════════════════════
+// ★ V7.4: A4 页面设置，hr 隐藏（分页由 ZIP 内替换处理，不靠 CSS）
 function buildFullHtml(bodyContent) {
-    // ★ FIX 1: A4 尺寸 margin 设为标准 2.54cm，并注入 @page A4 声明
-    // ★ FIX 2: hr 样式设为 display:none，分页由 MSO_BREAK 的 page-break-before:always 驱动
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
         '@page { size: A4; margin: 2.54cm; }' +
         'body{font-family:Calibri,"宋体",sans-serif;font-size:14pt;line-height:1.6;margin:2.54cm;}' +
@@ -539,46 +542,53 @@ function buildFullHtml(bodyContent) {
         '</style></head><body>' + bodyContent + '</body></html>';
 }
 
-// ★ FIX 2: 新增函数 — 在 docx 二进制中注入真正的 Word 分页符 XML
-// html-docx-js 不完整支持 page-break-before，改用 JSZip 直接修改 document.xml
+// ★ V7.4 核心修复：占位符文字替换法
+// html-docx-js 把 <p>WDPAGEBREAK_7F3A9C</p> 转成 <w:p><w:r><w:t>WDPAGEBREAK_7F3A9C</w:t></w:r></w:p>
+// 我们用 JSZip 在 document.xml 中精确找到这个字串，替换为真正的 Word 分页符段落。
 async function injectWordPageBreaks(blob) {
-    if (typeof JSZip === 'undefined') return blob;
+    if (typeof JSZip === 'undefined') { console.warn('JSZip 未加载，分页符无法注入'); return blob; }
     try {
         var zip = await JSZip.loadAsync(blob);
         var docXml = await zip.file('word/document.xml').async('text');
 
-        // 将 html-docx-js 生成的 page-break-before:always 段落替换为真正的 Word 分页符
-        // 匹配模式：含 page-break-before 样式属性的 <w:p> 段落
-        // 替换为标准 Word 分页符段落
+        // 真正的 Word 分页符段落 XML
         var pageBreakXml =
-            '<w:p>' +
-            '<w:pPr><w:jc w:val="left"/></w:pPr>' +
-            '<w:r><w:br w:type="page"/></w:r>' +
-            '</w:p>';
+            '<w:p><w:pPr><w:jc w:val="left"/><w:rPr/></w:pPr>' +
+            '<w:r><w:br w:type="page"/></w:r></w:p>';
 
-        // 匹配 html-docx-js 转换后包含 page-break 的段落（通常含 pageBreakBefore 或 sectPr）
-        // 方式1：替换 <w:pageBreakBefore/> 所在段落
-        docXml = docXml.replace(
-            /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:pageBreakBefore\/>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g,
-            pageBreakXml
+        // 匹配 html-docx-js 生成的含占位文字的段落，形如：
+        //   <w:p ...><w:pPr>...</w:pPr><w:r ...><w:t ...>WDPAGEBREAK_7F3A9C</w:t></w:r></w:p>
+        // 用宽松正则覆盖各种属性变体
+        var markerRe = new RegExp(
+            '<w:p\\b[^>]*>(?:<w:pPr>[\\s\\S]*?<\\/w:pPr>)?<w:r\\b[^>]*>(?:<w:rPr>[\\s\\S]*?<\\/w:rPr>)?<w:t\\b[^>]*>' +
+            PB_MARKER +
+            '<\\/w:t><\\/w:r><\\/w:p>',
+            'g'
         );
+        var replaced = docXml.replace(markerRe, pageBreakXml);
 
-        // 方式2：替换含 mso-break-type 的空段落（本工具生成的分页标记）
-        // html-docx-js 会把 style="page-break-before:always" 转为 <w:pageBreakBefore/>
-        // 已由方式1处理，这里加个保险：直接在段落末尾插入 <w:br w:type="page"/>
-        // 针对完全空的但有 pageBreakBefore 的段落
-        docXml = docXml.replace(
-            /<w:p><w:pPr>(?:[^<]|<(?!\/w:pPr>))*?<w:pageBreakBefore\/>(?:[^<]|<(?!\/w:pPr>))*?<\/w:pPr><\/w:p>/g,
-            pageBreakXml
-        );
+        // 保险：如果精确匹配失败（不同版本生成格式），用简单字符串查找兜底
+        if (replaced === docXml && docXml.indexOf(PB_MARKER) !== -1) {
+            // 找到包含占位符的完整 <w:p>…</w:p> 块
+            replaced = docXml.replace(
+                new RegExp('<w:p\\b[^>]*>[\\s\\S]*?' + PB_MARKER + '[\\s\\S]*?<\\/w:p>', 'g'),
+                pageBreakXml
+            );
+        }
 
-        zip.file('word/document.xml', docXml);
+        if (replaced === docXml && docXml.indexOf(PB_MARKER) !== -1) {
+            // 最后兜底：直接把占位符所在段落文本换掉（段落结构保持不变，仅供预防）
+            console.warn('分页符正则未命中，使用文本兜底替换');
+            replaced = docXml.split(PB_MARKER).join('</w:t></w:r></w:p>' + pageBreakXml + '<w:p><w:r><w:t>');
+        }
+
+        zip.file('word/document.xml', replaced);
         return await zip.generateAsync({
             type: 'blob',
             mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         });
     } catch (e) {
-        console.warn('分页符注入失败（不影响文件）:', e);
+        console.warn('分页符注入失败（不影响文件下载）:', e);
         return blob;
     }
 }
@@ -772,7 +782,7 @@ async function downloadExcel() {
         var input = document.getElementById('excel-input').value;
         var engName = (extractEnglishFilename(input) || 'AI_Complete_Table').substring(0, 80);
         var workbook = new ExcelJS.Workbook();
-        workbook.creator = 'AI 全能转换神器 V7.3'; workbook.created = new Date();
+        workbook.creator = 'AI 全能转换神器 V7.4'; workbook.created = new Date();
         var fixedSheetNames = ['语块', '单词'], usedSheetNames = {};
         Array.from(tables).forEach(function (table, i) {
             var parsed = tableToArray(table);
