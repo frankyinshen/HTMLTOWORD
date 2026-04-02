@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V7.6</title>
+    <title>AI 全能转换神器 V7.7</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -266,7 +266,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V7.6</span>
+    <span class="version-badge">V7.7</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -532,20 +532,13 @@ function extractEnglishFilename(text) {
 // ══════════════════════════════════════════════════════
 var RE_PB_DIV = /<div\s+style=["']page-break-after\s*:\s*always;?["']\s*>\s*<\/div>/gi;
 
-// ★ V7.6 终极修复（经查阅源码确认）：
-// html-docx-js 使用 altChunk 技术，把整个 HTML 以 MHT 格式打包进 word/afchunk.mht。
-// document.xml 只是一个指针壳 <w:altChunk r:id="htmlChunk"/>，Word 打开时才转换内容。
-// 所以之前所有改 document.xml 的方案全部无效！内容根本不在那里。
-//
-// 正确方案：
-// 1. 在 HTML 中插入占位段落 <p>WDPAGEBREAK_7F3A9C</p>
-// 2. html-docx-js 把它原样写进 afchunk.mht（纯 ASCII 不会被 QP 编码）
-// 3. 用 JSZip 读取 afchunk.mht，把占位符所在的段落替换为真正的分页 CSS div
-//    （MHT 的 QP 编码中 = 号写成 =3D，其余 ASCII 字符原样保留）
-// 4. Word 打开 MHT 时读取 CSS，正确识别 page-break-after:always 并渲染分页
+// ★ V7.7 分页符方案（最终可靠方案）：
+// html-docx-js 把 HTML 原样存入 afchunk.mht，Word 打开时按 HTML+CSS 规则渲染。
+// Word 完全支持 <div style="page-break-after: always;"></div> 作为分页指令。
+// 直接在传入 html-docx-js 的 HTML 字符串里写这个 div 即可，无需任何 ZIP 操作。
+// 变量 WORD_PB 就是这个 div，由 hrToPageBreak 将 <hr> 替换为它。
 
-var PB_MARKER    = 'WDPAGEBREAK_7F3A9C';
-var MSO_BREAK    = '<p>' + PB_MARKER + '</p>';
+var WORD_PB      = '<div style="page-break-after: always;"></div>';
 var VISUAL_BREAK = '<div class="page-break-line"></div>';
 
 function hrToVisual(html) {
@@ -556,76 +549,27 @@ function hrToVisual(html) {
         .replace(RE_PB_DIV, VISUAL_BREAK);
 }
 function hrToPageBreak(html) {
+    // 直接输出 Word 支持的 page-break CSS div，不做任何二次处理
     return html
-        .replace(/<hr\s*\/?>/gi, MSO_BREAK)
-        .replace(/<hr\s+[^>]*>/gi, MSO_BREAK)
+        .replace(/<hr\s*\/?>/gi, WORD_PB)
+        .replace(/<hr\s+[^>]*>/gi, WORD_PB)
         .replace(/<\/hr>/gi, '')
-        .replace(RE_PB_DIV, MSO_BREAK);
+        .replace(RE_PB_DIV, WORD_PB);
 }
 function cleanupList(html) { return html.replace(/<li>\s*<p>/gi, '<li>').replace(/<\/p>\s*<\/li>/gi, '</li>'); }
 
 // ══════════════════════════════════════════════════════
-// Word 生成 — A4 页面
+// Word 生成
 // ══════════════════════════════════════════════════════
 function buildFullHtml(bodyContent) {
-    // 注意：page-break-after:always 由 injectMhtPageBreaks 写入 afchunk.mht，
-    // 不需要在这里的样式中处理；此处的 @page 只影响打印预览，不影响 Word 分页。
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
-        '@page { size: A4; margin: 2.54cm; }' +
         'body{font-family:Calibri,"宋体",sans-serif;font-size:14pt;line-height:1.6;margin:2.54cm;}' +
-        'p,li,div{font-size:14pt;line-height:150%;margin-bottom:10pt;text-align:left;}strong{font-weight:bold;}' +
+        'p,li{font-size:14pt;line-height:150%;margin-bottom:10pt;text-align:left;}strong{font-weight:bold;}' +
         'h1,h2,h3,h4,h5{color:#2E74B5;margin-bottom:15pt;}' +
         'hr{display:none!important;}' +
         'table{border-collapse:collapse;width:100%;margin:15px 0;}td,th{border:1px solid #000;padding:8px;font-size:14pt;}' +
         'th{background-color:#f2f2f2;font-weight:bold;}' +
         '</style></head><body>' + bodyContent + '</body></html>';
-}
-
-// ★ V7.6 核心：修改 afchunk.mht 中的 HTML，将占位符替换为分页 CSS div
-async function injectMhtPageBreaks(blob) {
-    if (typeof JSZip === 'undefined') { console.warn('JSZip 未加载'); return blob; }
-    try {
-        var zip = await JSZip.loadAsync(blob);
-
-        // html-docx-js 生成的 docx 中，HTML 内容在 word/afchunk.mht
-        var mhtFile = zip.file('word/afchunk.mht');
-        if (!mhtFile) { console.warn('afchunk.mht 未找到'); return blob; }
-
-        var mhtText = await mhtFile.async('text');
-        if (mhtText.indexOf(PB_MARKER) === -1) return blob; // 无分页符，直接返回
-
-        // MHT 使用 quoted-printable 编码：= 号写成 =3D，其余 ASCII 原样保留
-        // 我们的占位符全是大写字母+下划线，在 QP 中原样出现
-        // 占位符可能出现在 <p>...</p> 或其他标签中，用宽松替换覆盖所有情况
-
-        // 替换目标：包含占位符的整个 HTML 标签行
-        // 替换为：QP 编码格式的 page-break div
-        // style=3D"..." 是 = 号在 QP 中的编码
-        var pbDiv = '<div style=3D"page-break-after: always;"></div>';
-
-        // 方法1：精确替换 <p>MARKER</p>
-        var fixed = mhtText.replace(
-            new RegExp('<p[^>]*>' + PB_MARKER + '<\/p>', 'g'),
-            pbDiv
-        );
-
-        // 方法2（兜底）：如果 marked 生成了不同的包裹标签，把含 MARKER 的整行替换
-        if (fixed.indexOf(PB_MARKER) !== -1) {
-            fixed = fixed.replace(
-                new RegExp('[^\r\n]*' + PB_MARKER + '[^\r\n]*', 'g'),
-                pbDiv
-            );
-        }
-
-        zip.file('word/afchunk.mht', fixed);
-        return await zip.generateAsync({
-            type: 'blob',
-            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        });
-    } catch (e) {
-        console.warn('MHT 分页符注入失败:', e);
-        return blob;
-    }
 }
 
 async function addPageNumberToDocx(blob) {
@@ -659,8 +603,11 @@ async function addPageNumberToDocx(blob) {
             var ftrRef = '<w:footerReference w:type="default" r:id="' + frid + '"/>';
             if (docXml.indexOf('<w:sectPr') !== -1) { docXml = docXml.replace(/(<w:sectPr[^>]*>)/, '$1' + ftrRef); }
             else { docXml = docXml.replace('</w:body>', '<w:sectPr>' + ftrRef + '</w:sectPr></w:body>'); }
-            zip.file('word/document.xml', docXml);
         }
+        // ★ V7.7 A4 页面：html-docx-js 硬编码 Letter(12240×15840)，用字符串替换改为 A4(11906×16838)
+        docXml = docXml.replace(/w:w="12240"\s+w:h="15840"/g, 'w:w="11906" w:h="16838"');
+        docXml = docXml.replace(/w:w="15840"\s+w:h="12240"/g, 'w:w="16838" w:h="11906"'); // 横向兼容
+        zip.file('word/document.xml', docXml);
         return await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
     } catch (e) { console.warn('Word 页码注入失败:', e); return blob; }
 }
@@ -671,8 +618,7 @@ async function downloadDocx(bodyContent, filename) {
         orientation: 'portrait',
         margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
     });
-    // ★ V7.6: 修改 afchunk.mht（内容真正所在位置），再注入页码
-    blob = await injectMhtPageBreaks(blob);
+    // ★ V7.7: 分页符已直接写入 HTML，只需注入页码
     blob = await addPageNumberToDocx(blob);
     triggerDownload(blob, filename.replace(/\.doc$/, '.docx'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 }
@@ -816,7 +762,7 @@ async function downloadExcel() {
         var input = document.getElementById('excel-input').value;
         var engName = (extractEnglishFilename(input) || 'AI_Complete_Table').substring(0, 80);
         var workbook = new ExcelJS.Workbook();
-        workbook.creator = 'AI 全能转换神器 V7.6'; workbook.created = new Date();
+        workbook.creator = 'AI 全能转换神器 V7.7'; workbook.created = new Date();
         var fixedSheetNames = ['语块', '单词'], usedSheetNames = {};
         Array.from(tables).forEach(function (table, i) {
             var parsed = tableToArray(table);
@@ -884,7 +830,7 @@ function downloadSplitWord() {
     var rawText = translateMathSymbols(document.getElementById('split-input').value);
     var p1 = cleanupList(hrToPageBreak(marked.parse(disableMarkdownLists(smartExtractEnglish(rawText)))));
     var p2 = cleanupList(hrToPageBreak(marked.parse(disableMarkdownLists(rawText))));
-    downloadDocx(p1 + MSO_BREAK + p2, (extractEnglishFilename(rawText) || 'Bilingual_Split_Doc') + '.docx');
+    downloadDocx(p1 + WORD_PB + p2, (extractEnglishFilename(rawText) || 'Bilingual_Split_Doc') + '.docx');
 }
 
 // ══════════════════════════════════════════════════════
