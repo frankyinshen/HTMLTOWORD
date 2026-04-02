@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V7.4</title>
+    <title>AI 全能转换神器 V7.5</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -113,9 +113,9 @@
             background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
             color: #fff; padding: 3px 10px; border-radius: 20px; font-size: 13px; font-weight: bold;
         }
-        /* ★ FIX 4: 自定义字符数控件样式 */
+        /* ★ V7.5: 字符上限控件 + 预设保存 */
         .chunk-limit-control {
-            display: flex; align-items: center; gap: 8px;
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
             background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25);
             border-radius: 8px; padding: 8px 14px; flex-shrink: 0;
         }
@@ -126,13 +126,30 @@
             background: rgba(255,255,255,0.15); color: #fff; text-align: center;
         }
         .chunk-limit-input:focus { outline: none; background: rgba(255,255,255,0.25); }
-        .chunk-limit-save {
-            padding: 4px 12px; font-size: 12px; background: #e94560; color: white;
+        .chunk-limit-name-input {
+            width: 110px; padding: 4px 8px; font-size: 12px;
+            border: 1px solid rgba(255,255,255,0.4); border-radius: 4px;
+            background: rgba(255,255,255,0.15); color: #fff;
+        }
+        .chunk-limit-name-input::placeholder { color: rgba(255,255,255,0.5); }
+        .chunk-limit-name-input:focus { outline: none; background: rgba(255,255,255,0.25); }
+        .chunk-preset-select {
+            padding: 4px 6px; font-size: 12px; border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 4px; background: rgba(30,40,70,0.8); color: #fff; max-width: 140px;
+        }
+        .chunk-limit-btn {
+            padding: 4px 10px; font-size: 12px; color: white;
             border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;
             transition: background 0.2s;
         }
-        .chunk-limit-save:hover { background: #c73652; }
-        .chunk-limit-save.saved { background: #107C10; }
+        .chunk-limit-btn.save-btn  { background: #e94560; }
+        .chunk-limit-btn.save-btn:hover { background: #c73652; }
+        .chunk-limit-btn.save-btn.saved { background: #107C10; }
+        .chunk-limit-btn.load-btn  { background: #0078d4; }
+        .chunk-limit-btn.load-btn:hover { background: #005fa3; }
+        .chunk-limit-btn.del-btn   { background: #555; }
+        .chunk-limit-btn.del-btn:hover { background: #333; }
+        .chunk-limit-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.25); margin: 0 4px; }
 
         .voiceover-main { display: flex; gap: 20px; flex: 1; }
         .chunks-area {
@@ -249,7 +266,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V7.4</span>
+    <span class="version-badge">V7.5</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -342,11 +359,20 @@
                 <span class="voice-badge">Ryan</span><span class="voice-badge">Sonia</span>
             </div>
         </div>
-        <!-- ★ FIX 4: 自定义字符数上限 -->
+        <!-- ★ V7.5: 字符上限 + 预设保存/调取 -->
         <div class="chunk-limit-control">
-            <label>每段字符上限：</label>
+            <label>每段上限：</label>
             <input type="number" id="chunk-limit-input" class="chunk-limit-input" value="7650" min="500" max="50000" step="50">
-            <button class="chunk-limit-save" id="chunk-limit-save-btn" onclick="saveChunkLimit()">💾 保存</button>
+            <span style="color:#e2c97e;font-size:12px;">字符</span>
+            <div class="chunk-limit-divider"></div>
+            <input type="text" id="chunk-preset-name" class="chunk-limit-name-input" placeholder="预设名称" maxlength="20">
+            <button class="chunk-limit-btn save-btn" id="chunk-limit-save-btn" onclick="saveChunkLimitPreset()">💾 保存预设</button>
+            <div class="chunk-limit-divider"></div>
+            <select id="chunk-preset-select" class="chunk-preset-select" onchange="onPresetSelectChange()">
+                <option value="">— 选择预设 —</option>
+            </select>
+            <button class="chunk-limit-btn load-btn" onclick="loadChunkLimitPreset()">📂 调取</button>
+            <button class="chunk-limit-btn del-btn" onclick="deleteChunkLimitPreset()">🗑️</button>
         </div>
     </div>
     <div class="voiceover-main">
@@ -542,47 +568,55 @@ function buildFullHtml(bodyContent) {
         '</style></head><body>' + bodyContent + '</body></html>';
 }
 
-// ★ V7.4 核心修复：占位符文字替换法
-// html-docx-js 把 <p>WDPAGEBREAK_7F3A9C</p> 转成 <w:p><w:r><w:t>WDPAGEBREAK_7F3A9C</w:t></w:r></w:p>
-// 我们用 JSZip 在 document.xml 中精确找到这个字串，替换为真正的 Word 分页符段落。
+// ★ V7.5 核心修复：indexOf 精确定位法
+// 根本原因：html-docx-js 生成 <w:rPr/> 自闭合标签，导致所有正则全部失配。
+// 正确做法：用 indexOf 定位占位符文字，向前找最近的 <w:p，向后找 </w:p>，整段替换。
+function _replaceAllPageBreakMarkers(xml, marker, replacement) {
+    var result = xml;
+    while (result.indexOf(marker) !== -1) {
+        var markerIdx = result.indexOf(marker);
+
+        // 向前找最近的 <w:p（排除 <w:pPr / <w:pStyle 等子标签）
+        var pStart = -1;
+        var searchPos = markerIdx;
+        while (searchPos > 0) {
+            var candidate = result.lastIndexOf('<w:p', searchPos - 1);
+            if (candidate === -1) break;
+            var nextChar = result[candidate + 4];
+            if (nextChar === '>' || nextChar === ' ' || nextChar === '\n' || nextChar === '\r' || nextChar === '\t') {
+                pStart = candidate;
+                break;
+            }
+            searchPos = candidate;
+        }
+        if (pStart === -1) break; // 找不到段落开始，安全退出
+
+        // 向后找 </w:p>
+        var pEnd = result.indexOf('</w:p>', markerIdx);
+        if (pEnd === -1) break;
+        pEnd += '</w:p>'.length;
+
+        result = result.substring(0, pStart) + replacement + result.substring(pEnd);
+    }
+    return result;
+}
+
 async function injectWordPageBreaks(blob) {
     if (typeof JSZip === 'undefined') { console.warn('JSZip 未加载，分页符无法注入'); return blob; }
     try {
         var zip = await JSZip.loadAsync(blob);
         var docXml = await zip.file('word/document.xml').async('text');
 
+        if (docXml.indexOf(PB_MARKER) === -1) return blob; // 文档中无分页符，直接返回
+
         // 真正的 Word 分页符段落 XML
         var pageBreakXml =
-            '<w:p><w:pPr><w:jc w:val="left"/><w:rPr/></w:pPr>' +
+            '<w:p><w:pPr><w:jc w:val="left"/></w:pPr>' +
             '<w:r><w:br w:type="page"/></w:r></w:p>';
 
-        // 匹配 html-docx-js 生成的含占位文字的段落，形如：
-        //   <w:p ...><w:pPr>...</w:pPr><w:r ...><w:t ...>WDPAGEBREAK_7F3A9C</w:t></w:r></w:p>
-        // 用宽松正则覆盖各种属性变体
-        var markerRe = new RegExp(
-            '<w:p\\b[^>]*>(?:<w:pPr>[\\s\\S]*?<\\/w:pPr>)?<w:r\\b[^>]*>(?:<w:rPr>[\\s\\S]*?<\\/w:rPr>)?<w:t\\b[^>]*>' +
-            PB_MARKER +
-            '<\\/w:t><\\/w:r><\\/w:p>',
-            'g'
-        );
-        var replaced = docXml.replace(markerRe, pageBreakXml);
+        var fixed = _replaceAllPageBreakMarkers(docXml, PB_MARKER, pageBreakXml);
 
-        // 保险：如果精确匹配失败（不同版本生成格式），用简单字符串查找兜底
-        if (replaced === docXml && docXml.indexOf(PB_MARKER) !== -1) {
-            // 找到包含占位符的完整 <w:p>…</w:p> 块
-            replaced = docXml.replace(
-                new RegExp('<w:p\\b[^>]*>[\\s\\S]*?' + PB_MARKER + '[\\s\\S]*?<\\/w:p>', 'g'),
-                pageBreakXml
-            );
-        }
-
-        if (replaced === docXml && docXml.indexOf(PB_MARKER) !== -1) {
-            // 最后兜底：直接把占位符所在段落文本换掉（段落结构保持不变，仅供预防）
-            console.warn('分页符正则未命中，使用文本兜底替换');
-            replaced = docXml.split(PB_MARKER).join('</w:t></w:r></w:p>' + pageBreakXml + '<w:p><w:r><w:t>');
-        }
-
-        zip.file('word/document.xml', replaced);
+        zip.file('word/document.xml', fixed);
         return await zip.generateAsync({
             type: 'blob',
             mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -782,7 +816,7 @@ async function downloadExcel() {
         var input = document.getElementById('excel-input').value;
         var engName = (extractEnglishFilename(input) || 'AI_Complete_Table').substring(0, 80);
         var workbook = new ExcelJS.Workbook();
-        workbook.creator = 'AI 全能转换神器 V7.4'; workbook.created = new Date();
+        workbook.creator = 'AI 全能转换神器 V7.5'; workbook.created = new Date();
         var fixedSheetNames = ['语块', '单词'], usedSheetNames = {};
         Array.from(tables).forEach(function (table, i) {
             var parsed = tableToArray(table);
@@ -867,11 +901,115 @@ function downloadHtmlWord() {
 }
 
 // ══════════════════════════════════════════════════════
-// 5. 文本切割 — ★ FIX 4: 自定义字符数上限 + localStorage 保存
+// 5. 文本切割 — ★ V7.5: 字符上限预设保存/调取（类似指令合成）
 // ══════════════════════════════════════════════════════
-var CHUNK_LIMIT_STORAGE_KEY = 'ai_converter_chunk_limit';
-var MAX_CHUNK = 7650; // 默认值，会被 localStorage 覆盖
+var CHUNK_LIMIT_STORAGE_KEY  = 'ai_converter_chunk_limit';        // 上次使用值
+var CHUNK_PRESETS_STORAGE_KEY = 'ai_converter_chunk_presets';     // 预设列表
+var MAX_CHUNK = 7650; // 运行时当前值
 
+/* ---- 预设数据读写 ---- */
+function _getChunkPresets() {
+    try { var r = localStorage.getItem(CHUNK_PRESETS_STORAGE_KEY); return r ? JSON.parse(r) : {}; } catch (e) { return {}; }
+}
+function _putChunkPresets(obj) {
+    try { localStorage.setItem(CHUNK_PRESETS_STORAGE_KEY, JSON.stringify(obj)); } catch (e) {}
+}
+
+/* ---- 刷新下拉列表 ---- */
+function _refreshChunkPresetList(selectVal) {
+    var sel = document.getElementById('chunk-preset-select'); if (!sel) return;
+    var presets = _getChunkPresets();
+    var names = Object.keys(presets).sort();
+    sel.innerHTML = '<option value="">— 选择预设 —</option>';
+    names.forEach(function (name) {
+        var opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name + '（' + presets[name].toLocaleString() + ' 字符）';
+        sel.appendChild(opt);
+    });
+    if (selectVal) sel.value = selectVal;
+}
+
+/* ---- 选择预设时自动填入输入框（方便用户看到值再决定是否调取） ---- */
+function onPresetSelectChange() {
+    var sel = document.getElementById('chunk-preset-select');
+    var inp = document.getElementById('chunk-limit-input');
+    if (!sel || !inp || !sel.value) return;
+    var presets = _getChunkPresets();
+    if (presets[sel.value] !== undefined) inp.value = presets[sel.value];
+}
+
+/* ---- 保存当前输入框的值为预设 ---- */
+function saveChunkLimitPreset() {
+    var inp  = document.getElementById('chunk-limit-input');
+    var nameInp = document.getElementById('chunk-preset-name');
+    if (!inp) return;
+
+    var val = parseInt(inp.value, 10);
+    if (isNaN(val) || val < 500 || val > 50000) {
+        alert('请输入 500 ~ 50000 之间的整数！'); return;
+    }
+
+    var name = nameInp ? nameInp.value.trim() : '';
+    if (!name) { alert('请先填写预设名称（例如：Clipchamp / 短视频 / 长文章）'); nameInp && nameInp.focus(); return; }
+
+    var presets = _getChunkPresets();
+    if (presets[name] !== undefined && !confirm('「' + name + '」已存在，是否覆盖？')) return;
+
+    presets[name] = val;
+    _putChunkPresets(presets);
+
+    // 同时把当前值写入"上次使用"
+    try { localStorage.setItem(CHUNK_LIMIT_STORAGE_KEY, String(val)); } catch (e) {}
+
+    // 应用到运行时
+    MAX_CHUNK = val;
+    _updateChunkLimitDisplay(val);
+    _refreshChunkPresetList(name);
+    if (nameInp) nameInp.value = '';
+
+    var btn = document.getElementById('chunk-limit-save-btn');
+    if (btn) {
+        var orig = btn.textContent; btn.textContent = '✅ 已保存'; btn.classList.add('saved');
+        setTimeout(function () { btn.textContent = orig; btn.classList.remove('saved'); }, 2000);
+    }
+    processVoiceover();
+}
+
+/* ---- 调取选中预设 ---- */
+function loadChunkLimitPreset() {
+    var sel = document.getElementById('chunk-preset-select');
+    var inp = document.getElementById('chunk-limit-input');
+    if (!sel || !sel.value) { alert('请先从下拉列表选择一个预设。'); return; }
+    var presets = _getChunkPresets();
+    var val = presets[sel.value];
+    if (val === undefined) { alert('找不到该预设，可能已被删除。'); _refreshChunkPresetList(); return; }
+
+    MAX_CHUNK = val;
+    if (inp) inp.value = val;
+    try { localStorage.setItem(CHUNK_LIMIT_STORAGE_KEY, String(val)); } catch (e) {}
+    _updateChunkLimitDisplay(val);
+    processVoiceover();
+}
+
+/* ---- 删除选中预设 ---- */
+function deleteChunkLimitPreset() {
+    var sel = document.getElementById('chunk-preset-select');
+    if (!sel || !sel.value) { alert('请先从下拉列表选择要删除的预设。'); return; }
+    if (!confirm('确认删除预设「' + sel.value + '」？')) return;
+    var presets = _getChunkPresets();
+    delete presets[sel.value];
+    _putChunkPresets(presets);
+    _refreshChunkPresetList();
+}
+
+/* ---- 更新显示（输入框 + 底部提示文字） ---- */
+function _updateChunkLimitDisplay(val) {
+    var disp = document.getElementById('chunk-limit-display');
+    if (disp) disp.textContent = val.toLocaleString();
+}
+
+/* ---- 初始化：读取上次使用值 ---- */
 function loadChunkLimit() {
     try {
         var saved = localStorage.getItem(CHUNK_LIMIT_STORAGE_KEY);
@@ -881,33 +1019,11 @@ function loadChunkLimit() {
                 MAX_CHUNK = val;
                 var inp = document.getElementById('chunk-limit-input');
                 if (inp) inp.value = val;
-                var disp = document.getElementById('chunk-limit-display');
-                if (disp) disp.textContent = val.toLocaleString();
+                _updateChunkLimitDisplay(val);
             }
         }
     } catch (e) {}
-}
-
-function saveChunkLimit() {
-    var inp = document.getElementById('chunk-limit-input');
-    if (!inp) return;
-    var val = parseInt(inp.value, 10);
-    if (isNaN(val) || val < 500 || val > 50000) {
-        alert('请输入 500 ~ 50000 之间的整数！');
-        return;
-    }
-    MAX_CHUNK = val;
-    try { localStorage.setItem(CHUNK_LIMIT_STORAGE_KEY, String(val)); } catch (e) {}
-    var disp = document.getElementById('chunk-limit-display');
-    if (disp) disp.textContent = val.toLocaleString();
-    // 按钮反馈
-    var btn = document.getElementById('chunk-limit-save-btn');
-    if (btn) {
-        btn.textContent = '✅ 已保存'; btn.classList.add('saved');
-        setTimeout(function () { btn.textContent = '💾 保存'; btn.classList.remove('saved'); }, 2000);
-    }
-    // 重新切割
-    processVoiceover();
+    _refreshChunkPresetList();
 }
 
 function clearVoiceover() { document.getElementById('voiceover-input').value = ''; processVoiceover(); }
