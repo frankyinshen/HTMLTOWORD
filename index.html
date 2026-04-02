@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V7.7</title>
+    <title>AI 全能转换神器 V7.8</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -266,7 +266,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V7.7</span>
+    <span class="version-badge">V7.8</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -572,6 +572,166 @@ function buildFullHtml(bodyContent) {
         '</style></head><body>' + bodyContent + '</body></html>';
 }
 
+// ★ V7.8 核心：多段 altChunk 合并方案
+// 原理：按分页符把 HTML 拆成 N 段 → 每段用 html-docx-js 单独生成 docx → 
+//       提取每个 docx 中的 afchunk.mht → 用 JSZip 手工构建一个新 docx，
+//       document.xml 里放 N 个 <w:altChunk>，段间插入真正的 Word 换页 sectPr。
+// 这样分页 100% 由 Word 原生 section break 实现，与 HTML/CSS 完全无关。
+
+// 从 blob 中提取 afchunk.mht 内容
+async function extractMhtFromBlob(blob) {
+    if (typeof JSZip === 'undefined') throw new Error('JSZip 未加载');
+    var zip = await JSZip.loadAsync(blob);
+    var mhtFile = zip.file('word/afchunk.mht');
+    if (!mhtFile) throw new Error('afchunk.mht 未找到');
+    return await mhtFile.async('uint8array');
+}
+
+// A4 尺寸（twips）
+var A4_W = '11906', A4_H = '16838';
+var MARGINS = 'w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"';
+
+// 生成段间换页段落（Word nextPage section break）
+function makePageBreakParagraph() {
+    return '<w:p>' +
+        '<w:pPr><w:sectPr>' +
+        '<w:type w:val="nextPage"/>' +
+        '<w:pgSz w:w="' + A4_W + '" w:h="' + A4_H + '" w:orient="portrait"/>' +
+        '<w:pgMar ' + MARGINS + '/>' +
+        '</w:sectPr></w:pPr>' +
+        '</w:p>';
+}
+
+// 构建最终 document.xml
+function buildDocumentXml(chunkCount, footerRid) {
+    var ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+             'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+    var body = '';
+    for (var i = 0; i < chunkCount; i++) {
+        body += '<w:altChunk r:id="chunk' + i + '"/>';
+        if (i < chunkCount - 1) {
+            body += makePageBreakParagraph();
+        }
+    }
+    // 最终 sectPr（含页码 footer 引用）
+    var finalSectPr = '<w:sectPr>';
+    if (footerRid) finalSectPr += '<w:footerReference w:type="default" r:id="' + footerRid + '"/>';
+    finalSectPr += '<w:pgSz w:w="' + A4_W + '" w:h="' + A4_H + '" w:orient="portrait"/>' +
+                   '<w:pgMar ' + MARGINS + '/>' +
+                   '</w:sectPr>';
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+           '<w:document ' + ns + '><w:body>' + body + finalSectPr + '</w:body></w:document>';
+}
+
+// 构建 _rels/document.xml.rels
+function buildRels(chunkCount, footerRid) {
+    var ns = 'xmlns="http://schemas.openxmlformats.org/package/2006/relationships"';
+    var rels = '';
+    for (var i = 0; i < chunkCount; i++) {
+        rels += '<Relationship Id="chunk' + i + '"' +
+                ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk"' +
+                ' Target="chunk' + i + '.mht"/>';
+    }
+    if (footerRid) {
+        rels += '<Relationship Id="' + footerRid + '"' +
+                ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"' +
+                ' Target="footer1.xml"/>';
+    }
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+           '<Relationships ' + ns + '>' + rels + '</Relationships>';
+}
+
+// 构建 [Content_Types].xml
+function buildContentTypes(chunkCount, hasFooter) {
+    var ns = 'xmlns="http://schemas.openxmlformats.org/package/2006/content-types"';
+    var overrides = '<Override PartName="/word/document.xml"' +
+        ' ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>';
+    for (var i = 0; i < chunkCount; i++) {
+        overrides += '<Override PartName="/word/chunk' + i + '.mht" ContentType="message/rfc822"/>';
+    }
+    if (hasFooter) {
+        overrides += '<Override PartName="/word/footer1.xml"' +
+            ' ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>';
+    }
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+           '<Types ' + ns + '>' +
+           '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+           '<Default Extension="xml" ContentType="application/xml"/>' +
+           '<Default Extension="mht" ContentType="message/rfc822"/>' +
+           overrides + '</Types>';
+}
+
+// 页码 footer XML
+var FOOTER_XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>' +
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+    '</w:p></w:ftr>';
+
+// .rels（根）
+var ROOT_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+    '</Relationships>';
+
+// ★ 主函数：把含 WORD_PB 占位的 HTML 按段拆分，生成多 altChunk docx
+async function downloadDocxMultiChunk(bodyContent, filename) {
+    if (typeof htmlDocx === 'undefined') { alert('html-docx-js 库未加载，请检查网络后刷新。'); return; }
+    if (typeof JSZip === 'undefined') { alert('JSZip 库未加载，请检查网络后刷新。'); return; }
+
+    // 1. 按 WORD_PB 分割 HTML
+    var segments = bodyContent.split(WORD_PB).map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 0; });
+    if (segments.length === 0) segments = [bodyContent];
+
+    try {
+        // 2. 每段独立生成 docx，提取其 afchunk.mht
+        var mhtBuffers = [];
+        for (var i = 0; i < segments.length; i++) {
+            var segBlob = htmlDocx.asBlob(buildFullHtml(segments[i]), {
+                orientation: 'portrait',
+                margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+            });
+            var mhtData = await extractMhtFromBlob(segBlob);
+            mhtBuffers.push(mhtData);
+        }
+
+        // 3. 构建新 docx ZIP
+        var zip = new JSZip();
+        var footerRid = 'rIdFooter1';
+
+        // 写入每段 MHT
+        for (var j = 0; j < mhtBuffers.length; j++) {
+            zip.file('word/chunk' + j + '.mht', mhtBuffers[j]);
+        }
+
+        // 写入 document.xml（含多 altChunk + 段间 nextPage sectPr + A4）
+        zip.file('word/document.xml', buildDocumentXml(mhtBuffers.length, footerRid));
+
+        // 写入页码 footer
+        zip.file('word/footer1.xml', FOOTER_XML);
+
+        // 写入 _rels
+        zip.folder('_rels').file('.rels', ROOT_RELS);
+        zip.folder('word/_rels').file('document.xml.rels', buildRels(mhtBuffers.length, footerRid));
+
+        // 写入 Content_Types
+        zip.file('[Content_Types].xml', buildContentTypes(mhtBuffers.length, true));
+
+        // 4. 生成最终 blob 并下载
+        var finalBlob = await zip.generateAsync({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+        triggerDownload(finalBlob, filename.replace(/\.doc$/, '.docx'));
+
+    } catch (e) {
+        console.error('多段合并 docx 失败:', e);
+        alert('生成失败：' + (e.message || String(e)));
+    }
+}
+
 async function addPageNumberToDocx(blob) {
     if (typeof JSZip === 'undefined') return blob;
     try {
@@ -613,12 +773,16 @@ async function addPageNumberToDocx(blob) {
 }
 
 async function downloadDocx(bodyContent, filename) {
+    // ★ V7.8: 有分页符时走多段合并路径，无分页符退回单段路径（兼容旧逻辑）
+    if (bodyContent.indexOf(WORD_PB) !== -1) {
+        return downloadDocxMultiChunk(bodyContent, filename);
+    }
+    // 单段：无分页符，走原有路径（加页码+A4）
     if (typeof htmlDocx === 'undefined') { alert('html-docx-js 库未加载，请检查网络后刷新。'); return; }
     var blob = htmlDocx.asBlob(buildFullHtml(bodyContent), {
         orientation: 'portrait',
         margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
     });
-    // ★ V7.7: 分页符已直接写入 HTML，只需注入页码
     blob = await addPageNumberToDocx(blob);
     triggerDownload(blob, filename.replace(/\.doc$/, '.docx'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 }
@@ -762,7 +926,7 @@ async function downloadExcel() {
         var input = document.getElementById('excel-input').value;
         var engName = (extractEnglishFilename(input) || 'AI_Complete_Table').substring(0, 80);
         var workbook = new ExcelJS.Workbook();
-        workbook.creator = 'AI 全能转换神器 V7.7'; workbook.created = new Date();
+        workbook.creator = 'AI 全能转换神器 V7.8'; workbook.created = new Date();
         var fixedSheetNames = ['语块', '单词'], usedSheetNames = {};
         Array.from(tables).forEach(function (table, i) {
             var parsed = tableToArray(table);
