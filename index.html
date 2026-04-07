@@ -592,10 +592,11 @@ var A4_W = '11906', A4_H = '16838';
 var MARGINS = 'w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"';
 
 // 生成段间换页段落（Word nextPage section break）
-function makePageBreakParagraph() {
+function makePageBreakParagraph(footerRid) {
     return '<w:p>' +
         '<w:pPr><w:sectPr>' +
         '<w:type w:val="nextPage"/>' +
+        (footerRid ? '<w:footerReference w:type="default" r:id="' + footerRid + '"/>' : '') +
         '<w:pgSz w:w="' + A4_W + '" w:h="' + A4_H + '" w:orient="portrait"/>' +
         '<w:pgMar ' + MARGINS + '/>' +
         '</w:sectPr></w:pPr>' +
@@ -609,8 +610,8 @@ function buildDocumentXml(chunkCount, footerRid) {
     var body = '';
     for (var i = 0; i < chunkCount; i++) {
         body += '<w:altChunk r:id="chunk' + i + '"/>';
-        if (i < chunkCount - 1) {
-            body += makePageBreakParagraph();
+       if (i < chunkCount - 1) {
+            body += makePageBreakParagraph(footerRid);
         }
     }
     // 最终 sectPr（含页码 footer 引用）
