@@ -2,11 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI 全能转换神器 V7.8</title>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <title>AI 全能转换神器 V8.1</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-    <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
 
     <style>
         * { box-sizing: border-box; }
@@ -266,7 +266,7 @@
     <button class="tab-btn" onclick="switchTab('html', this)">🌐 HTML 代码转 Word</button>
     <button class="tab-btn" onclick="switchTab('voiceover', this)">🎙️ 文本切割</button>
     <button class="tab-btn" onclick="switchTab('compose', this)">🧩 指令合成</button>
-    <span class="version-badge">V7.8</span>
+    <span class="version-badge">V8.1</span>
 </div>
 
 <!-- 1. 普通 Word -->
@@ -277,7 +277,7 @@
             <button class="action-btn clear" onclick="clearContent('word')">清空</button>
         </div>
         <textarea id="word-input" oninput="renderWord(); checkLen(this,'word-len-warn')"
-            placeholder="请粘贴 AI 生成的文章... 注：文章中的 --- 或 *** 或 &lt;div style=&quot;page-break-after: always;&quot;&gt;&lt;/div&gt; 会生成换页符"></textarea>
+            placeholder="请粘贴 AI 生成的文章... 支持 $...$ 与 $$...$$ 数学公式（自动转为 ×÷√、上下标等）。文章中的 --- 或 *** 或 &lt;div style=&quot;page-break-after: always;&quot;&gt;&lt;/div&gt; 会生成换页符"></textarea>
         <div id="word-len-warn" class="len-warn">⚠️ 内容超过 50,000 字符，预览可能较慢，建议分段处理。</div>
     </div>
     <div class="box">
@@ -356,13 +356,13 @@
             <div class="voice-badges">
                 <span class="voice-badge">Andrew</span><span class="voice-badge">Ava</span>
                 <span class="voice-badge">Christopher</span><span class="voice-badge">Sonia</span>
-                <span class="voice-badge">Ryan</span><span class="voice-badge">Sonia</span>
+                <span class="voice-badge">Ryan</span>
             </div>
         </div>
         <!-- ★ V7.5: 字符上限 + 预设保存/调取 -->
         <div class="chunk-limit-control">
             <label>每段上限：</label>
-            <input type="number" id="chunk-limit-input" class="chunk-limit-input" value="7650" min="500" max="50000" step="50">
+            <input type="number" id="chunk-limit-input" class="chunk-limit-input" value="7650" min="500" max="50000" step="50" oninput="onChunkLimitInput()" onblur="onChunkLimitBlur()">
             <span style="color:#e2c97e;font-size:12px;">字符</span>
             <div class="chunk-limit-divider"></div>
             <input type="text" id="chunk-preset-name" class="chunk-limit-name-input" placeholder="预设名称" maxlength="20">
@@ -465,6 +465,42 @@
 'use strict';
 
 // ══════════════════════════════════════════════════════
+// ★ V8.1 更新说明（相对 V8.0 的精准修复 —— 公式引擎主体 / preprocessPageBreaks / Word 多段合并逻辑均未改动）
+// 1.【HTML 转 Word】extractHtmlDocument 提取 <head> 样式改为剥掉外层 <style> 标签只留纯 CSS，
+//    不再产生嵌套 <style>、首条规则失效、多块样式泄漏成正文；else 分支同步剥 <body> 标签；
+//    buildFullHtml 的 body 显式 margin:0（页面边距统一由 sectPr 1440 twips 控制）。
+// 2.【指令合成】删除插入段改为按总段数顺延编号 —— 主模板缺中间编号不再提前中断跳号；
+//    初始化/清空/加载模板不再自动滚动到新增块；旧格式模板加载时插入段重置为默认 2 个；
+//    _setComposeStatus 统一管理状态条（文本/颜色/背景/边框全量重置，无样式残留）。
+// 3.【双语分离】纯英文行只去行尾空白，保留二级列表缩进；混排行成对匹配修复加粗
+//    标记内侧空格（** 概述 ** → **概述**），且不影响「**A** and **B**」段间空格。
+// 4.【文本切割】「每段上限」输入 150ms 防抖（大文本连续按键不卡顿）；失焦时空值/
+//    越界自动回填当前生效 MAX_CHUNK，界面显示与实际切割上限保持一致。
+// 5.【预览安全】sanitizePreviewHtml 补充过滤 <title>（标题文本不再泄漏为可见正文）。
+// ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+// ★ V8.0 更新说明（相对 V7.9 的修复清单 —— 两轮 AI 交叉审查确认项全修）
+// 1.【公式·死循环】未闭合的 \( 与 \[ 不再卡死浏览器（边输入边预览安全）；
+//    正文里的 \$ 转义美元不再被误当公式定界符吞掉。
+// 2.【公式·内容丢失】\sin \cos \tan \log \ln \lim \max \min \exp 等常用
+//    函数名保留为普通文本；\mathbf \mathit \binom \substack 不再连内容被删。
+// 3.【公式·语义】\not= → ≠、\not\in → ∉、\not< → ≮、\not\leq → ≰ 等，
+//    「非」关系不再被删成肯定形式（语义反转修复）。
+// 4.【公式·转义】\frac{a*b}{c}、\text{file\_name} 不再二次转义/误转下标；
+//    转义与字面量恢复移到出口统一执行一次；同输入缓存免重复全量转换。
+// 5.【预览安全】sanitizePreviewHtml 过滤 <style>/<link>/<iframe>/<meta>/文档骨架，
+//    粘贴完整 HTML 文档不再污染预览面板。
+// 6.【HTML 转 Word】完整文档提取 <body> 并把 <head> 样式注入每个分页分段，
+//    不再双层嵌套、分页后不再丢样式；body margin 与 @page 不再叠加翻倍。
+// 7.【交互】「每段上限」手动修改即时生效；选预设即时应用；删除插入段时
+//    主模板占位符同步重排；指令合成一次性替换防二次污染；常用指令
+//    整包保存/加载（主模板+插入段）；合成状态样式不再残留。
+// 8.【其他】双语分离转 Word 保留英文 Markdown 排版；多段落列表项不再输出
+//    非法 HTML；--- 紧跟正文不再误判为 setext 标题。
+// （V7.9 相对 V7.8：公式引擎重写、CDN 锁版、sectPr 顺序、预览过滤）
+// ══════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════
 // 库状态检测
 // ══════════════════════════════════════════════════════
 window.addEventListener('load', function () {
@@ -500,13 +536,477 @@ function checkLen(textarea, warnId) {
     var warn = document.getElementById(warnId);
     if (warn) warn.classList.toggle('show', textarea.value.length > 50000);
 }
+// ══════════════════════════════════════════════════════
+// ★★ V8.0 数学公式转换引擎（相对 V7.9 的修复清单）
+//   1.【死循环】未闭合的 \( \[ 不再卡死浏览器：按字面推进 + 停止正则
+//     同时识别 \$，普通文本段不会在 \$ 的 $ 处被错误截断；
+//   2.【内容丢失】\substack 不再被当作双参数命令整体删除；
+//   3.【内容丢失】\sin \cos \tan \log \ln \lim \max \min \exp 等常用函数名
+//     保留为普通文本（不再被兜底正则连同内容一起删除）；
+//   4.【语义反转】\not= → ≠、\not\in → ∉、\not< → ≮、\not> → ≯、
+//     \not\le(q) → ≰、\not\ge(q) → ≱、\not\subset → ⊄、\not\subseteq → ⊈、
+//     \not\equiv → ≢；
+//   5.【二次转义】_escapeMd 与字面量恢复移到出口统一执行一次：
+//     递归内层不再提前转义，\frac{a*b}{c} 不再输出 a\\*b/c，
+//     \text{file\_name} 的 _ 不再被误转成下标 ₙ；
+//   6. \mathbf \mathit \mathscr 加入结构命令表；\binom{n}{k} → C(n, k)；
+//   7. \cr（TeX 原始换行）与 \\ 一样转换为换行。
+// ══════════════════════════════════════════════════════
+
+// ---------- 符号命令表（\command → Unicode） ----------
+var MATH_SYMBOL_MAP = {
+    // 运算符
+    'times': '\u00D7', 'div': '\u00F7', 'cdot': '\u00B7', 'ast': '*', 'star': '\u2605',
+    'pm': '\u00B1', 'mp': '\u2213', 'oplus': '\u2295', 'ominus': '\u2296', 'otimes': '\u2297',
+    'odot': '\u2299', 'oslash': '\u2298', 'circ': '\u2218', 'bullet': '\u2022',
+    // 关系符
+    'leq': '\u2264', 'le': '\u2264', 'geq': '\u2265', 'ge': '\u2265', 'neq': '\u2260', 'ne': '\u2260',
+    'equiv': '\u2261', 'approx': '\u2248', 'asymp': '\u2248', 'simeq': '\u2243', 'sim': '\u223C',
+    'cong': '\u2245', 'propto': '\u221D', 'll': '\u226A', 'gg': '\u226B', 'prec': '\u227A', 'succ': '\u227B',
+    // 箭头
+    'to': '\u2192', 'rightarrow': '\u2192', 'longrightarrow': '\u27F6', 'leftarrow': '\u2190',
+    'longleftarrow': '\u27F5', 'Rightarrow': '\u21D2', 'Longrightarrow': '\u27F9', 'Leftarrow': '\u21D0',
+    'iff': '\u21D4', 'Leftrightarrow': '\u21D4', 'leftrightarrow': '\u2194', 'longleftrightarrow': '\u27F7',
+    'mapsto': '\u21A6', 'uparrow': '\u2191', 'downarrow': '\u2193', 'nearrow': '\u2197',
+    'searrow': '\u2198', 'swarrow': '\u2199', 'nwarrow': '\u2196', 'implies': '\u27F9',
+    // 集合与逻辑
+    'in': '\u2208', 'notin': '\u2209', 'ni': '\u220B', 'cup': '\u222A', 'cap': '\u2229',
+    'subset': '\u2282', 'subseteq': '\u2286', 'supset': '\u2283', 'supseteq': '\u2287',
+    'emptyset': '\u2205', 'varnothing': '\u2205', 'forall': '\u2200', 'exists': '\u2203',
+    'nexists': '\u2204', 'neg': '\u00AC', 'lnot': '\u00AC', 'land': '\u2227', 'wedge': '\u2227',
+    'lor': '\u2228', 'vee': '\u2228',
+    // 几何
+    'perp': '\u22A5', 'parallel': '\u2225', 'mid': '\u2223', 'angle': '\u2220',
+    'measuredangle': '\u2221', 'triangle': '\u25B3', 'square': '\u25A1',
+    // 常用符号
+    'infty': '\u221E', 'partial': '\u2202', 'nabla': '\u2207', 'degree': '\u00B0',
+    'sum': '\u2211', 'prod': '\u220F', 'coprod': '\u2210', 'int': '\u222B', 'iint': '\u222C',
+    'iiint': '\u222D', 'oint': '\u222E', 'because': '\u2235', 'therefore': '\u2234',
+    'ldots': '\u2026', 'dots': '\u2026', 'cdots': '\u22EF', 'vdots': '\u22EE', 'ddots': '\u22F1',
+    'prime': '\u2032', 'hbar': '\u210F', 'ell': '\u2113', 'Re': '\u211C', 'Im': '\u2111',
+    'aleph': '\u2135', 'top': '\u22A4', 'vdash': '\u22A2', 'dashv': '\u22A3', 'models': '\u22A7',
+    'vert': '|', 'Vert': '\u2016', 'lvert': '|', 'rvert': '|', 'lVert': '\u2016', 'rVert': '\u2016',
+    // ★ V8.0：常用数学函数名 —— 保留为普通文本（不再被兜底正则删除）
+    'sin': 'sin', 'cos': 'cos', 'tan': 'tan', 'cot': 'cot', 'sec': 'sec', 'csc': 'csc',
+    'arcsin': 'arcsin', 'arccos': 'arccos', 'arctan': 'arctan',
+    'sinh': 'sinh', 'cosh': 'cosh', 'tanh': 'tanh', 'coth': 'coth',
+    'log': 'log', 'ln': 'ln', 'lg': 'lg', 'exp': 'exp',
+    'lim': 'lim', 'max': 'max', 'min': 'min', 'sup': 'sup', 'inf': 'inf',
+    'det': 'det', 'dim': 'dim', 'gcd': 'gcd', 'mod': 'mod', 'arg': 'arg', 'deg': 'deg',
+    // 希腊字母（小写）
+    'alpha': '\u03B1', 'beta': '\u03B2', 'gamma': '\u03B3', 'delta': '\u03B4', 'epsilon': '\u03B5',
+    'varepsilon': '\u03F5', 'zeta': '\u03B6', 'eta': '\u03B7', 'theta': '\u03B8', 'vartheta': '\u03D1',
+    'iota': '\u03B9', 'kappa': '\u03BA', 'lambda': '\u03BB', 'mu': '\u03BC', 'nu': '\u03BD',
+    'xi': '\u03BE', 'pi': '\u03C0', 'varpi': '\u03D6', 'rho': '\u03C1', 'varrho': '\u03F1',
+    'sigma': '\u03C3', 'varsigma': '\u03C2', 'tau': '\u03C4', 'upsilon': '\u03C5',
+    'phi': '\u03D5', 'varphi': '\u03C6', 'chi': '\u03C7', 'psi': '\u03C8', 'omega': '\u03C9',
+    // 希腊字母（大写）
+    'Gamma': '\u0393', 'Delta': '\u0394', 'Theta': '\u0398', 'Lambda': '\u039B', 'Xi': '\u039E',
+    'Pi': '\u03A0', 'Sigma': '\u03A3', 'Upsilon': '\u03A5', 'Phi': '\u03A6', 'Psi': '\u03A8',
+    'Omega': '\u03A9',
+    // 间距命令 → 空格
+    'quad': '  ', 'qquad': '    ', 'enspace': ' ', 'thinspace': ' ', 'medspace': ' ', 'thickspace': ' '
+};
+
+// ---------- 需要整体删除的命令（结构/排版类） ----------
+// ★ V8.0: 移除 'not' —— \not 与关系符的组合在 NOT_COMBO 中语义化处理，不再直接删除
+var MATH_REMOVE_CMDS = [
+    'left', 'right', 'displaystyle', 'textstyle', 'scriptstyle', 'limits', 'nolimits',
+    'big', 'Big', 'bigg', 'Bigg', 'bigl', 'Bigl', 'bigr', 'Bigr', 'biggl', 'Biggl',
+    'biggr', 'Biggr', 'bigm', 'Bigm', 'mathopen', 'mathclose', 'mathbin', 'mathrel',
+    'mathord', 'mathop', 'mathinner', 'ensuremath', 'nonscript', 'relax'
+];
+
+// ---------- \not 组合 → Unicode（语义保持，杜绝 ≠ 变 = 的反转） ----------
+var NOT_COMBO = [
+    [/\\not\s*=/g, '\u2260'],                                        // ≠
+    [/\\not\s*</g, '\u226E'],                                        // ≮
+    [/\\not\s*>/g, '\u226F'],                                        // ≯
+    [/\\not\s*\\(?:subseteq|leq|geq|equiv|subset|le|ge|in)(?![a-zA-Z])/g, function (m) {
+        var key = m.replace(/\\not\s*/, '').replace(/\\/g, '').trim();
+        return {
+            'subseteq': '\u2288', 'leq': '\u2270', 'geq': '\u2271', 'equiv': '\u2262',
+            'subset': '\u2284', 'le': '\u2270', 'ge': '\u2271', 'in': '\u2209'
+        }[key] || m;
+    }]
+];
+
+// ---------- 带花括号参数的结构命令 ----------
+// ★ V8.0: + mathbf mathit mathscr mathnormal binom
+var GROUP_CMDS = [
+    'dfrac', 'tfrac', 'frac', 'sqrt', 'overset', 'underset', 'substack', 'binom',
+    'textbf', 'boldsymbol', 'bm', 'text', 'mathrm', 'mathbb', 'mathcal', 'mathfrak',
+    'mathsf', 'texttt', 'textit', 'textnormal', 'textrm', 'mbox', 'operatorname',
+    'mathbf', 'mathit', 'mathscr', 'mathnormal', 'mathtt',
+    'overline', 'underline', 'hat', 'bar', 'tilde', 'vec', 'overrightarrow',
+    'widehat', 'widetilde', 'overbrace', 'underbrace', 'boxed'
+];
+// ★ V8.0: substack 是单参数命令，从这里移除；binom 是双参数命令，加入
+var TWO_ARG_CMDS = { 'frac': 1, 'dfrac': 1, 'tfrac': 1, 'overset': 1, 'underset': 1, 'binom': 1 };
+
+// ---------- 上下标 Unicode 映射 ----------
+var SUPER_MAP = {
+    '0': '\u2070', '1': '\u00B9', '2': '\u00B2', '3': '\u00B3', '4': '\u2074', '5': '\u2075',
+    '6': '\u2076', '7': '\u2077', '8': '\u2078', '9': '\u2079', '+': '\u207A', '-': '\u207B',
+    '=': '\u207C', '(': '\u207D', ')': '\u207E', 'n': '\u207F', 'i': '\u2071',
+    'a': '\u1D43', 'c': '\u1D9C', 'd': '\u1D48', 'e': '\u1D49', 'h': '\u02B0', 'j': '\u02B2',
+    'k': '\u1D4F', 'l': '\u02E1', 'm': '\u1D50', 'o': '\u1D52', 'p': '\u1D56', 'r': '\u02B3',
+    's': '\u02E2', 't': '\u1D57', 'u': '\u1D58', 'v': '\u1D5B', 'w': '\u02B7', 'x': '\u02E3',
+    'y': '\u02B8'
+};
+var SUB_MAP = {
+    '0': '\u2080', '1': '\u2081', '2': '\u2082', '3': '\u2083', '4': '\u2084', '5': '\u2085',
+    '6': '\u2086', '7': '\u2087', '8': '\u2088', '9': '\u2089', '+': '\u208A', '-': '\u208B',
+    '=': '\u208C', '(': '\u208D', ')': '\u208E',
+    'a': '\u2090', 'e': '\u2091', 'o': '\u2092', 'x': '\u2093', 'h': '\u2095', 'k': '\u2096',
+    'l': '\u2097', 'm': '\u2098', 'n': '\u2099', 'p': '\u209A', 's': '\u209B', 't': '\u209C',
+    'i': '\u1D62', 'r': '\u1D63', 'u': '\u1D64', 'v': '\u1D65'
+};
+
+// ---------- 字面转义占位符（避免 \_ \^ \{ 等被后续步骤二次处理） ----------
+// ★ V8.0: 占位符贯穿整个递归管线，只在最外层出口恢复一次（修复双重转义/误转下标）
+var LITERAL_PH = {
+    '&': '\u0001', '%': '\u0002', '$': '\u0003', '#': '\u0004', '_': '\u0005',
+    '^': '\u0006', '~': '\u0007', '{': '\u0008', '}': '\u0009'
+};
+var LITERAL_RESTORE = {
+    '\u0001': '&', '\u0002': '%', '\u0003': '$', '\u0004': '#', '\u0005': '_',
+    '\u0006': '^', '\u0007': '~', '\u0008': '{', '\u0009': '}'
+};
+
+var _mathCmdReCache = null;
+function _getMathCmdRe() {
+    if (!_mathCmdReCache) {
+        var keys = [], k;
+        for (k in MATH_SYMBOL_MAP) keys.push(k);
+        for (var r = 0; r < MATH_REMOVE_CMDS.length; r++) keys.push(MATH_REMOVE_CMDS[r]);
+        keys.sort(function (a, b) { return b.length - a.length; });   // 长名优先，配合边界断言双保险
+        _mathCmdReCache = new RegExp('\\\\(' + keys.join('|') + ')(?![a-zA-Z])', 'g');
+    }
+    return _mathCmdReCache;
+}
+var _groupCmdReCache = null;
+function _getGroupCmdRe() {
+    if (!_groupCmdReCache) {
+        var sorted = GROUP_CMDS.slice().sort(function (a, b) { return b.length - a.length; });
+        // 可选参数 [n]（用于 \sqrt[3]{8}），(?![a-zA-Z]) 边界断言杜绝前缀误匹配
+        _groupCmdReCache = new RegExp('\\\\(' + sorted.join('|') + ')(?![a-zA-Z])\\s*(\\[[^\\]\\n]*\\])?', 'g');
+    }
+    return _groupCmdReCache;
+}
+
+// ---------- 小工具 ----------
+function _matchBrace(s, start) {
+    if (s.charAt(start) !== '{') return null;
+    var depth = 0, i = start;
+    while (i < s.length) {
+        var ch = s.charAt(i);
+        if (ch === '{') depth++;
+        else if (ch === '}') { depth--; if (depth === 0) return { content: s.substring(start + 1, i), end: i + 1 }; }
+        i++;
+    }
+    return null;
+}
+function _mapScriptChars(str, map) {
+    var out = '';
+    for (var i = 0; i < str.length; i++) {
+        var c = map[str.charAt(i)];
+        if (c === undefined) return null;
+        out += c;
+    }
+    return out;
+}
+function _toSuper(str) { return _mapScriptChars(str, SUPER_MAP); }
+function _toSub(str) { return _mapScriptChars(str, SUB_MAP); }
+function _escapeMd(s) {
+    return s.replace(/([*_~|<>\[\]])/g, '\\$1');
+}
+// 显示公式的每一行行首若是 Markdown 特殊字符则转义（防止被解析为标题/列表/引用）
+// 注：数字加点仅当后面跟空白（真正的列表形态）才转义，避免误伤 1.9 这类小数
+function _escapeLineStarts(s) {
+    return s.split('\n').map(function (line) {
+        return line.replace(/^(\s*)([#>+*-])(?=\s|$)/, '$1\\$2')
+                   .replace(/^(\s*)(\d+)\.(?=\s)/, '$1$2\\.');
+    }).join('\n');
+}
+// 判断 $..$ 内容是否像公式（排除货币/正文误伤）
+function _looksLikeMath(c) {
+    if (c === null || c === undefined) return false;
+    c = String(c);
+    if (/[\\^_{}=<>]/.test(c)) return true;                                  // LaTeX 命令或运算结构（含汉字也是公式，如 $\text{米}$）
+    if (/[\u4e00-\u9fa5\u3000-\u303F\uFF00-\uFFEF]/.test(c)) return false;   // 汉字/全角标点且无命令 → 正文或货币
+    if (/[a-zA-Z]{2,}\s/.test(c) && /(\s[a-zA-Z]{2,}|\s\d|[a-zA-Z]\s[a-zA-Z])/.test(c)) return false; // 英文短语
+    return true;
+}
+function _fracStr(a, b) {
+    var wrap = function (t) {
+        t = String(t).trim();
+        if (t.length <= 1) return t;
+        if (/[+\u00D7\u00F7\u00B1\u00B7]/.test(t)) return '(' + t + ')';
+        if (t.indexOf('-') > 0) return '(' + t + ')';   // 中间的减号是二元运算
+        return t;
+    };
+    return wrap(a) + '/' + wrap(b);
+}
+function _sqrtStr(body, optArg) {
+    body = String(body).trim();
+    var n = optArg ? optArg.replace(/[\[\]]/g, '').trim() : '';
+    var prefix;
+    if (n === '' || n === '2') prefix = '\u221A';
+    else if (n === '3') prefix = '\u221B';
+    else if (n === '4') prefix = '\u221C';
+    else { var nsup = _toSuper(n); prefix = (nsup !== null ? nsup : '') + '\u221A'; }
+    var needParens = body.length > 3 || /[+\u00D7\u00F7\u00B1\u00B7]/.test(body) ||
+                     (body.indexOf('-') !== -1) || (body.indexOf('*') !== -1) || /^[a-zA-Z]{2,}/.test(body);
+    return prefix + (needParens ? '(' + body + ')' : body);
+}
+
+// ---------- 结构命令处理（\frac \sqrt \text 等带 {} 参数） ----------
+function _applyGroupCommands(s, depth) {
+    for (var pass = 0; pass < 8; pass++) {
+        var re = new RegExp(_getGroupCmdRe().source, 'g');
+        var m, out = '', last = 0, changed = false;
+        while ((m = re.exec(s)) !== null) {
+            var cmd = m[1], optArg = m[2] || null;
+            var pos = m.index + m[0].length;
+            var g1 = _matchBrace(s, pos);
+            if (!g1) continue;                       // 无参数 → 留给兜底清理
+            var g2 = null;
+            if (TWO_ARG_CMDS[cmd]) {
+                var k = g1.end;
+                while (k < s.length && /\s/.test(s.charAt(k))) k++;
+                g2 = _matchBrace(s, k);
+            }
+            if (TWO_ARG_CMDS[cmd] && !g2) continue;   // 分母缺失 → 保底
+            var replacement;
+            if (cmd === 'frac' || cmd === 'dfrac' || cmd === 'tfrac') {
+                replacement = _fracStr(_convertMathInner(g1.content, depth + 1), _convertMathInner(g2.content, depth + 1));
+            } else if (cmd === 'sqrt') {
+                replacement = _sqrtStr(_convertMathInner(g1.content, depth + 1), optArg);
+            } else if (cmd === 'mathbb') {
+                var bb = { 'R': '\u211D', 'Q': '\u211A', 'Z': '\u2124', 'N': '\u2115', 'C': '\u2102', 'P': '\u2119', 'E': '\u2130', 'H': '\u210D' }[g1.content.trim()];
+                replacement = (bb !== undefined ? bb : g1.content);
+            } else if (cmd === 'binom') {
+                // ★ V8.0: 二项式系数 → C(n, k) 组合数记法
+                replacement = 'C(' + _convertMathInner(g1.content, depth + 1) + ', ' + _convertMathInner(g2.content, depth + 1) + ')';
+            } else if (cmd === 'overset' || cmd === 'underset') {
+                replacement = _convertMathInner(g2.content, depth + 1);
+            } else {
+                // substack（单参数，堆叠内容单行化）、mathbf、text 等内容型命令 → 递归转换参数内容
+                replacement = _convertMathInner(g1.content, depth + 1);
+                if (cmd === 'substack') replacement = replacement.replace(/\n/g, ' ');   // 行内单行化
+            }
+            out += s.substring(last, m.index) + replacement;
+            last = (g2 ? g2.end : g1.end);
+            changed = true;
+            re.lastIndex = last;
+        }
+        if (!changed) return s;
+        out += s.substring(last);
+        s = out;
+    }
+    return s;
+}
+
+// ---------- ^ _ 上下标转换 ----------
+// ★ V8.0: 无法用 Unicode 表示时的保守写法不再立即 _escapeMd（出口统一转义，修复双重转义）；
+//   且 ^ _ 输出为字面占位符，避免外层递归把它再转一遍（修复 \frac{2^{a_b}}{c} 类双重转换）。
+function _convertScripts(s) {
+    var out = '', i = 0, n = s.length;
+    while (i < n) {
+        var ch = s.charAt(i);
+        if (ch === '^' || ch === '_') {
+            var j = i + 1, content = null, consumed = 0;
+            if (s.charAt(j) === '{') {
+                var g = _matchBrace(s, j);
+                if (g) { content = g.content; consumed = g.end - j; }
+            }
+            if (content === null) {
+                var m = s.substring(j).match(/^[+-]?\d+/);
+                if (m) { content = m[0]; consumed = m[0].length; }
+                else {
+                    var m2 = s.substring(j).match(/^[a-zA-Z]/);
+                    if (m2) { content = m2[0]; consumed = 1; }
+                }
+            }
+            if (content === null) { out += ch; i++; continue; }   // 后面不是脚本 → 保留字面 ^ 或 _
+            var conv = (ch === '^') ? _toSuper(content) : _toSub(content);
+            if (conv !== null) { out += conv; }
+            else { out += LITERAL_PH[ch] + '(' + content + ')'; }  // 保守写法，占位符防二次处理
+            i = j + consumed;
+        } else { out += ch; i++; }
+    }
+    return out;
+}
+
+// ---------- 数学段内部转换管线 ----------
+// ★ V8.0: 字面量恢复 + Markdown 转义从本函数移到出口 _finishMathText 统一执行一次
+function _convertMathInner(s, depth) {
+    if (!s) return '';
+    depth = depth || 0;
+    if (depth > 6) return String(s);
+
+    // 1) 行分隔符 \\ / \cr → 换行
+    s = s.replace(/\\\\/g, '\n').replace(/\\cr(?![a-zA-Z])/g, '\n');
+    // 1.5) \| 是范数/双竖线符号 ‖，先替换掉（避免转义后破坏表格）
+    s = s.replace(/\\\|/g, '\u2016');
+    // 2) \begin{env} / \end{env} 整体移除
+    s = s.replace(/\\(?:begin|end)\s*\{[^{}]*\}/g, '');
+    // 3) 字面转义占位（\_ \^ \{ \} \$ \% \& \# \~）
+    s = s.replace(/\\([&%$#_{}^~])/g, function (_, c) { return LITERAL_PH[c]; });
+    // 3.5) ★ V8.0: \not 组合语义化（\not= → ≠ 等），必须在符号表替换之前
+    for (var nc = 0; nc < NOT_COMBO.length; nc++) { s = s.replace(NOT_COMBO[nc][0], NOT_COMBO[nc][1]); }
+    s = s.replace(/\\not(?![a-zA-Z])/g, '');   // 残余 \not（后跟其他内容）→ 删除
+    // 4) 对齐符 & → 空格
+    s = s.replace(/&/g, ' ');
+    // 5) 结构命令
+    s = _applyGroupCommands(s, depth);
+    // 6) 符号命令表（带边界断言，杜绝 \left→"≤ft" 之类误替换；函数名保留为文本）
+    s = s.replace(_getMathCmdRe(), function (mm, cmd) {
+        return MATH_SYMBOL_MAP[cmd] !== undefined ? MATH_SYMBOL_MAP[cmd] : '';
+    });
+    // 7) 间距命令 \, \; \: \! 和 "\ "
+    s = s.replace(/\\[,;:!]/g, ' ').replace(/\\ /g, ' ');
+    // 8) 未知命令兜底移除（连同它的花括号参数一并移除，如 \mathchoice{a}{b}{c}{d}）
+    s = s.replace(/\\[a-zA-Z]+\s*(\{[^{}]*\})*/g, '');
+    // 9) 上下标
+    s = _convertScripts(s);
+    // 10) 压缩多余空格（不动换行）
+    s = s.replace(/[ \t]{2,}/g, ' ');
+    return s.trim();
+}
+
+// ---------- 出口：恢复字面量 + Markdown 转义（全程仅此一次） ----------
+function _finishMathText(s) {
+    s = s.replace(/[\u0001-\u0009]/g, function (c) { return LITERAL_RESTORE[c] || c; });
+    return _escapeMd(s);
+}
+
+// ---------- 显示 / 行内公式出口 ----------
+function _convertDisplayMath(src) {
+    var conv = _finishMathText(_convertMathInner(src, 0));
+    if (!conv.trim()) return '\n\n';
+    conv = conv.split('\n').map(function (l) { return l.replace(/^\s+|\s+$/g, ''); }).join('\n');   // 每行首尾去空白
+    return '\n\n' + _escapeLineStarts(conv) + '\n\n';
+}
+function _convertInlineMath(src) {
+    return _finishMathText(_convertMathInner(src, 0));
+}
+
+// ---------- 普通文本段的全局公式命令处理（代码/公式段之外） ----------
+function _globalTextMathPass(s) {
+    if (!s) return s;
+    s = s.replace(_getMathCmdRe(), function (mm, cmd) {
+        return MATH_SYMBOL_MAP[cmd] !== undefined ? MATH_SYMBOL_MAP[cmd] : '';
+    });
+    s = s.replace(/(\d)\^([0-9]+)(?![0-9])/g, function (mm, d, digits) {
+        var sup = _toSuper(digits);
+        return sup !== null ? d + sup : mm;
+    });
+    return s;
+}
+
+// ---------- 主入口（保留原函数名，调用方无需改动） ----------
+// ★ V8.0: 单条缓存 —— 输入未变时直接复用上次结果（预览与下载共用，免二次全量转换）
+var _mathCacheSrc = null, _mathCacheOut = null;
 function translateMathSymbols(text) {
     if (!text) return '';
-    return text
-        .replace(/\\times/g, '×').replace(/\\div/g, '÷').replace(/\\star/g, '☆')
-        .replace(/\\le/g, '≤').replace(/\\ge/g, '≥').replace(/\\neq/g, '≠')
-        .replace(/\\approx/g, '≈').replace(/\\pm/g, '±').replace(/\\cdot/g, '·')
-        .replace(/\$([^\$]+)\$/g, function (_, c) { return c; });
+    if (text === _mathCacheSrc) return _mathCacheOut;
+    var r = _translateMathCore(text);
+    _mathCacheSrc = text; _mathCacheOut = r;
+    return r;
+}
+function _translateMathCore(text) {
+    if (!text) return '';
+    var out = [], i = 0, n = text.length;
+    while (i < n) {
+        var c = text.charAt(i);
+
+        // ── 代码围栏 ``` / ~~~（```math / ```latex 转公式，其余原样保留）
+        if (text.substr(i, 3) === '```' || text.substr(i, 3) === '~~~') {
+            var fence = text.substr(i, 3);
+            var closeIdx = text.indexOf(fence, i + 3);
+            var endIdx = closeIdx === -1 ? n : closeIdx + 3;
+            var blockBody = text.substring(i + 3, closeIdx === -1 ? n : closeIdx);
+            var nl = blockBody.indexOf('\n');
+            var info = (nl === -1 ? blockBody : blockBody.substring(0, nl)).trim().toLowerCase();
+            if (nl !== -1 && /^(math|latex|katex|tex)$/.test(info)) {
+                out.push(_convertDisplayMath(blockBody.substring(nl + 1)));
+            } else {
+                out.push(text.substring(i, endIdx));
+            }
+            i = endIdx;
+            continue;
+        }
+
+        // ── 显示公式 $$...$$
+        if (text.substr(i, 2) === '$$') {
+            var close2 = text.indexOf('$$', i + 2);
+            if (close2 !== -1) {
+                out.push(_convertDisplayMath(text.substring(i + 2, close2)));
+                i = close2 + 2;
+            } else { out.push('$$'); i += 2; }
+            continue;
+        }
+
+        // ── \[...\] 显示公式 / \(...\) 行内公式 / \$ 字面美元
+        // ★ V8.0: 未闭合的 \( \[ 不再死循环 —— 按字面推进两个字符
+        if (c === '\\') {
+            var nxt = text.charAt(i + 1);
+            if (nxt === '[') {
+                var closeB = text.indexOf('\\]', i + 2);
+                if (closeB !== -1) { out.push(_convertDisplayMath(text.substring(i + 2, closeB))); i = closeB + 2; continue; }
+                out.push('\\['); i += 2; continue;                     // 未闭合 → 字面 [（marked 渲染为普通 [）
+            } else if (nxt === '(') {
+                var closeP = text.indexOf('\\)', i + 2);
+                if (closeP !== -1) { out.push(_convertInlineMath(text.substring(i + 2, closeP))); i = closeP + 2; continue; }
+                out.push('\\('); i += 2; continue;                      // 未闭合 → 字面 (（marked 渲染为普通 (）
+            } else if (nxt === '$') {
+                out.push('\\$'); i += 2; continue;
+            }
+        }
+
+        // ── 行内代码 `...` / ``...``（原样保留，公式转换不碰代码）
+        if (c === '`') {
+            if (text.substr(i, 2) === '``') {
+                var closeDq = text.indexOf('``', i + 2);
+                var endDq = closeDq === -1 ? n : closeDq + 2;
+                out.push(text.substring(i, endDq)); i = endDq; continue;
+            }
+            var closeQ = text.indexOf('`', i + 1);
+            var endQ = closeQ === -1 ? n : closeQ + 1;
+            out.push(text.substring(i, endQ)); i = endQ; continue;
+        }
+
+        // ── 行内公式 $...$（在段落内寻找配对 $；疑似货币/正文则原样保留）
+        if (c === '$') {
+            var j = i + 1, closeI = -1;
+            while (j < n) {
+                if (text.charAt(j) === '$') { closeI = j; break; }
+                if (text.substr(j, 2) === '\n\n') break;   // 段落边界视为未闭合
+                j++;
+            }
+            if (closeI !== -1) {
+                var inner = text.substring(i + 1, closeI);
+                if (_looksLikeMath(inner)) { out.push(_convertInlineMath(inner)); }
+                else { out.push(text.substring(i, closeI + 1)); }
+                i = closeI + 1;
+            } else { out.push('$'); i += 1; }
+            continue;
+        }
+
+        // ── 普通文本段：处理到下一个特殊记号为止
+        // ★ V8.0: 停止正则同时识别 \( \[ \$，保证 $ 不把 \$ 拆开（防 $ 被吞）、
+        //          且任何情况下 i 都会前进（与未闭合分支双保险，杜绝死循环）
+        var re = /[`$]|\\[($\[\]]/g;
+        re.lastIndex = i;
+        var m2 = re.exec(text);
+        var stop = (m2 && m2.index > i) ? m2.index : n;    // m2.index === i 说明下一字符就是 \ 启动符 → 防御
+        if (m2 && m2.index === i) { out.push(_globalTextMathPass(text.charAt(i))); i++; continue; }
+        out.push(_globalTextMathPass(text.substring(i, stop)));
+        i = stop;
+    }
+    return out.join('');
 }
 function disableMarkdownLists(text) {
     return text.replace(/^(\s*\d+)\./gm, '$1\\.');
@@ -556,19 +1056,47 @@ function hrToPageBreak(html) {
         .replace(/<\/hr>/gi, '')
         .replace(RE_PB_DIV, WORD_PB);
 }
-function cleanupList(html) { return html.replace(/<li>\s*<p>/gi, '<li>').replace(/<\/p>\s*<\/li>/gi, '</li>'); }
+function cleanupList(html) {
+    // ★ V8.0: 只剥离「<li> 内仅包一个 <p>」的情形 —— marked 对多段落列表项输出
+    // <li><p>段1</p><p>段2</p></li>，旧全局正则会剥掉首尾 <p> 却留下中间的 </p><p>，产生非法 HTML
+    return html.replace(/<li>\s*<p>((?:(?!<\/?p\b|<\/?li\b|<\/?ul\b|<\/?ol\b)[\s\S])*)<\/p>\s*<\/li>/gi, '<li>$1</li>');
+}
+
+// ★ V7.9: 预览区轻量安全过滤（只作用于预览，不改动下载内容）。
+// 粘贴的 Markdown 若内嵌 <img onerror=...> 之类 HTML，经 marked 原样输出进 innerHTML 时会执行脚本；
+// 这里过滤 script 块、onXXX 事件属性和 javascript: 协议。
+function sanitizePreviewHtml(html) {
+    if (!html) return '';
+    return String(html)
+        .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+        .replace(/<style\b[\s\S]*?<\/style\s*>/gi, '')          // ★ V8.0: <style> 经 innerHTML 全局生效，会污染整个页面
+        .replace(/<link\b[^>]*>/gi, '')                              // ★ V8.0: 外链样式/预取
+        .replace(/<meta\b[^>]*>/gi, '').replace(/<base\b[^>]*>/gi, '')
+        .replace(/<title\b[\s\S]*?<\/title\s*>/gi, '')     // ★ V8.1: 文档标题不再泄漏成可见正文
+        .replace(/<(iframe|object|embed)\b[\s\S]*?<\/\1\s*>/gi, '')   // ★ V8.0: 嵌入框架
+        .replace(/<(iframe|object|embed)\b[^>]*\/?>/gi, '')
+        .replace(/<!DOCTYPE[^>]*>/gi, '')
+        .replace(/<\/?html\b[^>]*>/gi, '').replace(/<\/?head\b[^>]*>/gi, '').replace(/<\/?body\b[^>]*>/gi, '')
+        .replace(/\son[a-z]{2,}\s*=\s*"[^"]*"/gi, '')
+        .replace(/\son[a-z]{2,}\s*=\s*'[^']*'/gi, '')
+        .replace(/\son[a-z]{2,}\s*=\s*[^\s>]+/gi, '')
+        .replace(/javascript\s*:/gi, '');
+}
 
 // ══════════════════════════════════════════════════════
 // Word 生成
 // ══════════════════════════════════════════════════════
-function buildFullHtml(bodyContent) {
+function buildFullHtml(bodyContent, extraCss) {
+    // ★ V8.1: body 显式 margin:0 —— 页面边距统一由 sectPr 的 1440 twips 控制（不依赖 CSS 2.54cm），
+    //          源文档 CSS 的 body margin 不再与 @page 边距叠加；extraCss 用于「HTML 代码转 Word」注入源文档样式
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
-        'body{font-family:Calibri,"宋体",sans-serif;font-size:14pt;line-height:1.6;margin:2.54cm;}' +
+        'body{font-family:Calibri,"宋体",sans-serif;font-size:14pt;line-height:1.6;margin:0;}' +
         'p,li{font-size:14pt;line-height:150%;margin-bottom:10pt;text-align:left;}strong{font-weight:bold;}' +
         'h1,h2,h3,h4,h5{color:#2E74B5;margin-bottom:15pt;}' +
         'hr{display:none!important;}' +
         'table{border-collapse:collapse;width:100%;margin:15px 0;}td,th{border:1px solid #000;padding:8px;font-size:14pt;}' +
         'th{background-color:#f2f2f2;font-weight:bold;}' +
+        (extraCss || '') +
         '</style></head><body>' + bodyContent + '</body></html>';
 }
 
@@ -592,11 +1120,13 @@ var A4_W = '11906', A4_H = '16838';
 var MARGINS = 'w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"';
 
 // 生成段间换页段落（Word nextPage section break）
+// ★ V7.9 修复：OOXML 规定 sectPr 内 footerReference 必须排在 type/pgSz/pgMar 之前，
+//   旧版顺序属 schema 违规，部分 Word 版本会提示"文档有问题需要修复"。
 function makePageBreakParagraph(footerRid) {
     return '<w:p>' +
         '<w:pPr><w:sectPr>' +
-        '<w:type w:val="nextPage"/>' +
         (footerRid ? '<w:footerReference w:type="default" r:id="' + footerRid + '"/>' : '') +
+        '<w:type w:val="nextPage"/>' +
         '<w:pgSz w:w="' + A4_W + '" w:h="' + A4_H + '" w:orient="portrait"/>' +
         '<w:pgMar ' + MARGINS + '/>' +
         '</w:sectPr></w:pPr>' +
@@ -678,7 +1208,7 @@ var ROOT_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '</Relationships>';
 
 // ★ 主函数：把含 WORD_PB 占位的 HTML 按段拆分，生成多 altChunk docx
-async function downloadDocxMultiChunk(bodyContent, filename) {
+async function downloadDocxMultiChunk(bodyContent, filename, extraCss) {
     if (typeof htmlDocx === 'undefined') { alert('html-docx-js 库未加载，请检查网络后刷新。'); return; }
     if (typeof JSZip === 'undefined') { alert('JSZip 库未加载，请检查网络后刷新。'); return; }
 
@@ -690,7 +1220,7 @@ async function downloadDocxMultiChunk(bodyContent, filename) {
         // 2. 每段独立生成 docx，提取其 afchunk.mht
         var mhtBuffers = [];
         for (var i = 0; i < segments.length; i++) {
-            var segBlob = htmlDocx.asBlob(buildFullHtml(segments[i]), {
+            var segBlob = htmlDocx.asBlob(buildFullHtml(segments[i], extraCss), {
                 orientation: 'portrait',
                 margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
             });
@@ -773,19 +1303,19 @@ async function addPageNumberToDocx(blob) {
     } catch (e) { console.warn('Word 页码注入失败:', e); return blob; }
 }
 
-async function downloadDocx(bodyContent, filename) {
+async function downloadDocx(bodyContent, filename, extraCss) {
     // ★ V7.8: 有分页符时走多段合并路径，无分页符退回单段路径（兼容旧逻辑）
     if (bodyContent.indexOf(WORD_PB) !== -1) {
-        return downloadDocxMultiChunk(bodyContent, filename);
+        return downloadDocxMultiChunk(bodyContent, filename, extraCss);
     }
     // 单段：无分页符，走原有路径（加页码+A4）
     if (typeof htmlDocx === 'undefined') { alert('html-docx-js 库未加载，请检查网络后刷新。'); return; }
-    var blob = htmlDocx.asBlob(buildFullHtml(bodyContent), {
+    var blob = htmlDocx.asBlob(buildFullHtml(bodyContent, extraCss), {
         orientation: 'portrait',
         margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
     });
     blob = await addPageNumberToDocx(blob);
-    triggerDownload(blob, filename.replace(/\.doc$/, '.docx'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    triggerDownload(blob, filename.replace(/\.doc$/, '.docx'));
 }
 
 // ══════════════════════════════════════════════════════
@@ -894,12 +1424,17 @@ function triggerDownload(blob, filename) {
 // 1. 普通文章转 Word
 // ══════════════════════════════════════════════════════
 function preprocessPageBreaks(text) {
-    // ★ FIX 2: 将 --- 或 *** 单独一行转换为 <hr> 标签（marked 默认将 --- 解析为 <hr>，此步额外保险）
+    // ★ V8.0: 单独成行的 --- / *** / ___ 若紧跟正文行，marked 会把上一行解析成 setext h2 而非 <hr>；
+    //          给这类分隔线前后补空行，确保稳定解析为分页 <hr>
+    text = text.replace(/([^\n])\n(---+|\*\*\*+|___+)[ \t]*$/gm, '$1\n\n$2')
+               .replace(/^(---+|\*\*\*+|___+)[ \t]*\n(?=\n*[^\n])/gm, '$1\n\n');
+    // ★ FIX 2: 将分页 div 转换为 --- （marked 默认将 --- 解析为 <hr>，此步额外保险）
     return text.replace(/<div\s+style=["']page-break-after\s*:\s*always;?["']\s*>\s*<\/div>/gi, '\n\n---\n\n');
 }
 function renderWord() {
     var input = translateMathSymbols(document.getElementById('word-input').value);
-    document.getElementById('word-preview').innerHTML = cleanupList(hrToVisual(marked.parse(disableMarkdownLists(preprocessPageBreaks(input)))));
+    // ★ V7.9: 预览输出统一走 sanitizePreviewHtml 轻量过滤
+    document.getElementById('word-preview').innerHTML = sanitizePreviewHtml(cleanupList(hrToVisual(marked.parse(disableMarkdownLists(preprocessPageBreaks(input))))));
 }
 function downloadWord() {
     var input = translateMathSymbols(document.getElementById('word-input').value);
@@ -914,7 +1449,7 @@ function downloadWord() {
 // ══════════════════════════════════════════════════════
 function renderExcel() {
     document.getElementById('excel-preview').innerHTML =
-        marked.parse(translateMathSymbols(document.getElementById('excel-input').value));
+        sanitizePreviewHtml(marked.parse(translateMathSymbols(document.getElementById('excel-input').value)));
 }
 async function downloadExcel() {
     var previewEl = document.getElementById('excel-preview');
@@ -927,7 +1462,7 @@ async function downloadExcel() {
         var input = document.getElementById('excel-input').value;
         var engName = (extractEnglishFilename(input) || 'AI_Complete_Table').substring(0, 80);
         var workbook = new ExcelJS.Workbook();
-        workbook.creator = 'AI 全能转换神器 V7.8'; workbook.created = new Date();
+        workbook.creator = 'AI 全能转换神器 V8.0'; workbook.created = new Date();
         var fixedSheetNames = ['语块', '单词'], usedSheetNames = {};
         Array.from(tables).forEach(function (table, i) {
             var parsed = tableToArray(table);
@@ -983,13 +1518,43 @@ function extractPureEnglish(rawText) {
     });
     return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
-function smartExtractEnglish(rawText) { return extractPureEnglish(rawText); }
+// ★ V8.0: 供「双语分离转 Word」使用 —— 只剥离中文，保留 Markdown 排版语法
+// （标题/加粗/列表），导出的英文部分不再退化成无结构纯段落；
+// 配音切割（processVoiceover 双语模式）仍用 extractPureEnglish 做纯文本清洗。
+function extractEnglishKeepMd(rawText) {
+    var lines = rawText.split('\n'), result = [];
+    var cnCharRegex = /[\u4e00-\u9fa5\u3400-\u4DBF]/;
+    var cnCharGlobal = /[\u4e00-\u9fa5\u3400-\u4DBF]/g;
+    var cnPunctuationRegex = /[\u3000-\u303F\uFF00-\uFFEF\u2018\u2019\u201C\u201D\u2026\u00B7]/g;
+    lines.forEach(function (line) {
+        var trimmed = line.trim();
+        if (!trimmed) { result.push(''); return; }
+        if (!cnCharRegex.test(line)) {
+            result.push(line.replace(/\s+$/, ''));   // ★ V8.1: 只去行尾空白 —— 二级列表缩进原样保留（旧版 trim 会抹掉）
+        } else {
+            var engCount = (line.match(/[a-zA-Z]/g) || []).length;
+            if (engCount >= 3) {
+                var cleaned = line.replace(cnCharGlobal, ' ').replace(cnPunctuationRegex, ' ');
+                // ★ V8.1: 成对匹配修复加粗标记内侧空格（「** 概述 ** Overview」→「**概述** Overview」）；
+                //   刻意不用全局 \*\*\s+ 正则 —— 会把「**A** and **B**」的段间空格一并吃掉
+                cleaned = cleaned.replace(/\*\*([^*\n]+?)\*\*/g, function (mAll, inner) {
+                    var t = inner.trim();
+                    return t ? '**' + t + '**' : '';
+                });
+                cleaned = cleaned.replace(/\(\s*\)|\[\s*\]/g, '').replace(/\s{2,}/g, ' ').trim();
+                if (cleaned && /[a-zA-Z]/.test(cleaned)) result.push(cleaned);
+            }
+        }
+    });
+    return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function smartExtractEnglish(rawText) { return extractEnglishKeepMd(rawText); }
 function renderSplit() {
     var rawText = translateMathSymbols(document.getElementById('split-input').value);
     document.getElementById('split-preview').innerHTML =
-        cleanupList(hrToVisual(marked.parse(disableMarkdownLists(smartExtractEnglish(rawText))))) +
+        sanitizePreviewHtml(cleanupList(hrToVisual(marked.parse(disableMarkdownLists(smartExtractEnglish(rawText))))) +
         '<div class="page-break-line"></div>' +
-        cleanupList(hrToVisual(marked.parse(disableMarkdownLists(rawText))));
+        cleanupList(hrToVisual(marked.parse(disableMarkdownLists(rawText)))));
 }
 function downloadSplitWord() {
     var rawText = translateMathSymbols(document.getElementById('split-input').value);
@@ -1003,12 +1568,35 @@ function downloadSplitWord() {
 // ══════════════════════════════════════════════════════
 function renderHtml() {
     var rawHtml = document.getElementById('html-input').value;
-    var safeHtml = rawHtml.replace(/<scr\x69pt\b[^<]*(?:(?!<\/scr\x69pt>)<[^<]*)*<\/scr\x69pt>/gi, '');
+    var safeHtml = sanitizePreviewHtml(rawHtml);   // ★ V7.9: 统一走轻量过滤（script/onXXX/javascript:）
     document.getElementById('html-preview').innerHTML = safeHtml;
 }
 function downloadHtmlWord() {
     var raw = document.getElementById('html-input').value;
-    downloadDocx(cleanupList(hrToPageBreak(raw)), (extractEnglishFilename(raw) || 'HTML_to_Doc') + '.docx');
+    // ★ V8.0: 粘贴完整 HTML 文档（含 <!DOCTYPE>/<html>/<head>/<body>）时——
+    //   提取 <head> 里的 <style> 注入每个分页分段（分页后第 2 段起不再丢样式）；
+    //   只把 <body> 内部内容交给 buildFullHtml，避免 <html> 双层嵌套
+    var doc = extractHtmlDocument(raw);
+    downloadDocx(cleanupList(hrToPageBreak(doc.body)), (extractEnglishFilename(raw) || 'HTML_to_Doc') + '.docx', doc.styles);
+}
+// ★ V8.0: 完整 HTML 文档拆解（body 内容 + head 样式）
+function extractHtmlDocument(raw) {
+    raw = String(raw || '');
+    if (!/<!doctype\s+html|<html[\s>]|<body[\s>]|<head[\s>]/i.test(raw)) return { body: raw, styles: '' };
+    var styles = '';
+    var headM = raw.match(/<head[\s\S]*?<\/head\s*>/i);
+    // ★ V8.1: 剥掉外层 <style>…</style> 标签只留纯 CSS —— 旧版连标签一起拼进 buildFullHtml 的
+    //   <style> 内部，产生嵌套 <style>、首条规则失效，多块样式还会泄漏成正文
+    if (headM) styles = (headM[0].match(/<style[\s\S]*?<\/style\s*>/gi) || []).map(function (s) {
+        return s.replace(/^<style\b[^>]*>/i, '').replace(/<\/style\s*>/i, '').trim();
+    }).filter(function (s) { return s; }).join('\n');
+    var bodyM = raw.match(/<body\b[^>]*>([\s\S]*)<\/body\s*>/i);
+    var body;
+    if (bodyM) body = bodyM[1];
+    // ★ V8.1: else 分支同步剥 <body> 标签 —— 半截 HTML（有 <body> 无 </body>）不再嵌套
+    else body = raw.replace(/<!DOCTYPE[^>]*>/gi, '').replace(/<head[\s\S]*?<\/head\s*>/i, '')
+                   .replace(/<\/?html\b[^>]*>/gi, '').replace(/<\/?body\b[^>]*>/gi, '');
+    return { body: body, styles: styles };
 }
 
 // ══════════════════════════════════════════════════════
@@ -1017,6 +1605,7 @@ function downloadHtmlWord() {
 var CHUNK_LIMIT_STORAGE_KEY  = 'ai_converter_chunk_limit';        // 上次使用值
 var CHUNK_PRESETS_STORAGE_KEY = 'ai_converter_chunk_presets';     // 预设列表
 var MAX_CHUNK = 7650; // 运行时当前值
+var _chunkState = { count: 0 };   // ★ V8.0: 记录当前段数，供 updateChunkMeta 刷新总字符统计
 
 /* ---- 预设数据读写 ---- */
 function _getChunkPresets() {
@@ -1041,13 +1630,45 @@ function _refreshChunkPresetList(selectVal) {
     if (selectVal) sel.value = selectVal;
 }
 
-/* ---- 选择预设时自动填入输入框（方便用户看到值再决定是否调取） ---- */
+/* ---- 选择预设时自动填入输入框并立即生效（★ V8.0: 消除「显示 5000 实际仍按旧值切」的错位） ---- */
 function onPresetSelectChange() {
     var sel = document.getElementById('chunk-preset-select');
     var inp = document.getElementById('chunk-limit-input');
     if (!sel || !inp || !sel.value) return;
     var presets = _getChunkPresets();
-    if (presets[sel.value] !== undefined) inp.value = presets[sel.value];
+    var val = presets[sel.value];
+    if (val === undefined) return;
+    inp.value = val;
+    MAX_CHUNK = val;
+    try { localStorage.setItem(CHUNK_LIMIT_STORAGE_KEY, String(val)); } catch (e) {}
+    _updateChunkLimitDisplay(val);
+    processVoiceover();
+}
+
+/* ---- ★ V8.0: 手动修改「每段上限」输入框即时生效 ----
+   ★ V8.1: 150ms 防抖 —— 大文本下连续按键不再每键全量重切（processVoiceover 开销大） ---- */
+var _chunkLimitDebounceTimer = null;
+function onChunkLimitInput() {
+    if (_chunkLimitDebounceTimer) clearTimeout(_chunkLimitDebounceTimer);
+    _chunkLimitDebounceTimer = setTimeout(function () {
+        _chunkLimitDebounceTimer = null;
+        var inp = document.getElementById('chunk-limit-input');
+        if (!inp) return;
+        var v = parseInt(inp.value, 10);
+        if (isNaN(v) || v < 500 || v > 50000) return;   // 输入中间态（空值/越界）暂不动作
+        if (v === MAX_CHUNK) return;
+        MAX_CHUNK = v;
+        _updateChunkLimitDisplay(v);
+        try { localStorage.setItem(CHUNK_LIMIT_STORAGE_KEY, String(v)); } catch (e) {}
+        processVoiceover();
+    }, 150);
+}
+/* ---- ★ V8.1: 失焦校验 —— 输入框空值/越界时回填当前生效的 MAX_CHUNK，界面与实际切割上限一致 ---- */
+function onChunkLimitBlur() {
+    var inp = document.getElementById('chunk-limit-input');
+    if (!inp) return;
+    var v = parseInt(inp.value, 10);
+    if (isNaN(v) || v < 500 || v > 50000) inp.value = MAX_CHUNK;
 }
 
 /* ---- 保存当前输入框的值为预设 ---- */
@@ -1182,6 +1803,7 @@ function processVoiceover() {
         totalInfo.textContent = ''; countBar.classList.remove('show'); return;
     }
     var chunks = chunkSentences(splitIntoSentences(targetText), MAX_CHUNK);
+    _chunkState.count = chunks.length;   // ★ V8.0: 供 updateChunkMeta 同步刷新底部统计
     totalInfo.textContent = '共 ' + chunks.length + ' 段';
     countBar.textContent = '✅ 总字符：' + targetText.length + ' | 已切割为 ' + chunks.length + ' 段（每段上限 ' + MAX_CHUNK.toLocaleString() + ' 字符）';
     countBar.classList.add('show');
@@ -1207,6 +1829,13 @@ function updateChunkMeta(idx) {
     meta.textContent = len.toLocaleString() + ' 字符' + (isNear ? ' ⚠️ 接近上限' : '');
     meta.className = 'chunk-meta' + (isNear ? ' warn' : '');
     if (live) live.textContent = '（已编辑）' + len.toLocaleString() + ' 字符';
+    // ★ V8.0: 同步刷新底部总字符统计
+    var countBar = document.getElementById('chunk-count-bar');
+    if (countBar && countBar.classList.contains('show') && _chunkState.count > 0) {
+        var total = 0;
+        document.querySelectorAll('#chunks-area .chunk-textarea').forEach(function (x) { total += x.value.length; });
+        countBar.textContent = '✅ 总字符：' + total.toLocaleString() + ' | 已切割为 ' + _chunkState.count + ' 段（每段上限 ' + MAX_CHUNK.toLocaleString() + ' 字符）';
+    }
 }
 function copyChunk(idx) {
     var ta = document.getElementById('chunk-' + idx), btn = document.getElementById('copy-btn-' + idx);
@@ -1236,7 +1865,7 @@ function _refreshInsertLabels() {
     });
 }
 
-function addComposeBlock() {
+function addComposeBlock(skipScroll) {
     var uid = 'ins_' + (_composeInsertCounter++);
     var container = document.getElementById('compose-blocks-insert');
     var insertNum = _getInsertBlocks().length + 1;
@@ -1252,7 +1881,8 @@ function addComposeBlock() {
         '<textarea class="chunk-textarea" id="compose-ins-' + uid + '" style="min-height:100px;" placeholder="粘贴要替换「[插入' + insertNum + ']」的文字..."></textarea>';
     container.appendChild(div);
     _refreshInsertLabels();
-    div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // ★ V8.1: skipScroll —— 初始化/清空/加载模板不滚动，仅手动点击「➕ 增加插入段」才滚到新块
+    if (!skipScroll) div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function clearBlockTextById(uid) {
@@ -1262,16 +1892,31 @@ function clearBlockTextById(uid) {
 
 function removeInsertBlock(uid) {
     var block = document.getElementById('compose-block-' + uid);
-    if (block) { block.remove(); _refreshInsertLabels(); }
+    if (!block) return;
+    // ★ V8.0: 删除块时同步重写主模板占位符 —— 被删编号移除、更大编号前移，杜绝占位符错位
+    // ★ V8.1: 按当前总插入段数遍历 —— 旧版遇主模板缺中间编号就 break，
+    //   只有 [插入1] 和 [插入3] 时删第 1 段，[插入3] 无法顺延成 [插入2]
+    var idx = _getInsertBlocks().indexOf(block);
+    var mainTA = document.getElementById('compose-text-0');
+    if (mainTA && idx >= 0) {
+        var total = _getInsertBlocks().length;   // block 尚未 remove，长度即删除前的总段数
+        var k = idx + 1, v = mainTA.value;
+        v = v.split('[插入' + k + ']').join('');
+        for (var j = k + 1; j <= total; j++) {
+            v = v.split('[插入' + j + ']').join('[插入' + (j - 1) + ']');
+        }
+        mainTA.value = v;
+    }
+    block.remove(); _refreshInsertLabels();
 }
 
 function clearCompose() {
     var mainTA = document.getElementById('compose-text-0'); if (mainTA) mainTA.value = '';
     document.getElementById('compose-blocks-insert').innerHTML = '';
     _composeInsertCounter = 0;
-    // 重建默认两个插入段
-    addComposeBlock();
-    addComposeBlock();
+    // 重建默认两个插入段（★ V8.1: skipScroll，程序化重建不滚动）
+    addComposeBlock(true);
+    addComposeBlock(true);
     var ra = document.getElementById('compose-result'); if (ra) ra.value = '';
     var st = document.getElementById('compose-status'); if (st) { st.style.display = 'none'; st.textContent = ''; }
     _loadSavedTemplateList();
@@ -1280,15 +1925,19 @@ function clearCompose() {
 function synthesizeCompose() {
     var templateTA = document.getElementById('compose-text-0');
     if (!templateTA) { alert('找不到主模板文本框！'); return; }
-    var result = templateTA.value;
+    // ★ V8.0: 一次性 replace 回调 —— 插入段内容里若含其他「[插入N]」也不会被二次替换污染
+    var map = {};
     _getInsertBlocks().forEach(function (block, i) {
         var ta = block.querySelector('textarea');
-        if (ta && ta.value) { result = result.split('[插入' + (i + 1) + ']').join(ta.value); }
+        map[i + 1] = ta ? ta.value : '';
+    });
+    var result = templateTA.value.replace(/\[插入(\d+)\]/g, function (m, num) {
+        return map[num] ? map[num] : m;    // 空段/无对应段 → 保留占位符（与原逻辑一致）
     });
     var resultArea = document.getElementById('compose-result'); resultArea.value = result;
-    var statusEl = document.getElementById('compose-status');
-    function ok() { statusEl.textContent = '✅ 已合成并复制到剪贴板！共 ' + result.length.toLocaleString() + ' 字符。'; statusEl.style.display = 'block'; setTimeout(function () { statusEl.style.display = 'none'; }, 4000); }
-    function fail() { statusEl.textContent = '✅ 已合成（剪贴板复制失败，请手动复制右侧文本）。'; statusEl.style.color = '#d83b01'; statusEl.style.display = 'block'; setTimeout(function () { statusEl.style.display = 'none'; statusEl.style.color = '#107C10'; }, 5000); }
+    // ★ V8.1: 状态条改走 _setComposeStatus —— 成功/失败样式统一管理，不再分散且无残留
+    function ok() { _setComposeStatus('✅ 已合成并复制到剪贴板！共 ' + result.length.toLocaleString() + ' 字符。', false); }
+    function fail() { _setComposeStatus('⚠️ 已合成（剪贴板复制失败，请手动复制下方文本）。', true); }
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(result).then(ok).catch(function () { try { resultArea.select(); document.execCommand('copy'); ok(); } catch (e) { fail(); } });
     } else { try { resultArea.select(); document.execCommand('copy'); ok(); } catch (e) { fail(); } }
@@ -1314,17 +1963,41 @@ function saveTemplate() {
     if (!ta.value.trim()) { alert('主模板内容为空，请先填写内容再保存。'); return; }
     var saved = _getSavedTemplates();
     if (saved[name] && !confirm('「' + name + '」已存在，是否覆盖？')) return;
-    saved[name] = ta.value; _putSavedTemplates(saved); _loadSavedTemplateList();
+    // ★ V8.0: 整包保存（主模板 + 全部插入段内容），加载时一并恢复
+    saved[name] = {
+        v: 2, main: ta.value,
+        inserts: _getInsertBlocks().map(function (b) { var x = b.querySelector('textarea'); return x ? x.value : ''; })
+    };
+    _putSavedTemplates(saved); _loadSavedTemplateList();
     var sel = document.getElementById('saved-templates-select'); if (sel) sel.value = name;
-    nameInput.value = ''; _showSaveStatus('✅ 「' + name + '」已保存！');
+    nameInput.value = ''; _showSaveStatus('✅ 「' + name + '」已保存（含插入段内容）！');
 }
 function loadTemplate() {
     var sel = document.getElementById('saved-templates-select'), ta = document.getElementById('compose-text-0');
     if (!sel || !ta) return;
     var name = sel.value; if (!name) { alert('请先从下拉列表中选择一个已保存的指令。'); return; }
-    var saved = _getSavedTemplates(); if (!saved[name]) { alert('找不到该指令，可能已被删除。'); _loadSavedTemplateList(); return; }
+    var saved = _getSavedTemplates(); var item = saved[name];
+    if (!item) { alert('找不到该指令，可能已被删除。'); _loadSavedTemplateList(); return; }
     if (ta.value.trim() && !confirm('主模板当前有内容，加载后将被覆盖，确认继续？')) return;
-    ta.value = saved[name]; _showSaveStatus('📂 「' + name + '」已加载到主模板。');
+    // ★ V8.1: 旧格式仅含主模板 —— 清空残留插入段并重置计数器，恢复默认 2 个空插入段
+    if (typeof item === 'string') {
+        ta.value = item;
+        var legacyContainer = document.getElementById('compose-blocks-insert');
+        if (legacyContainer) legacyContainer.innerHTML = '';
+        _composeInsertCounter = 0;
+        addComposeBlock(true);
+        addComposeBlock(true);
+        _setComposeStatus('📂 「' + name + '」已加载到主模板（旧格式，插入段已重置为默认 2 个）。');
+        return;
+    }
+    // ★ V8.0: v2 整包恢复 —— 按保存时的插入段数量重建块，再回填内容
+    ta.value = item.main || '';
+    var container = document.getElementById('compose-blocks-insert');
+    if (container) container.innerHTML = '';
+    (item.inserts || []).forEach(function () { addComposeBlock(true); });
+    var blocks = _getInsertBlocks();
+    (item.inserts || []).forEach(function (v2, i2) { var x = blocks[i2] && blocks[i2].querySelector('textarea'); if (x) x.value = v2; });
+    _showSaveStatus('📂 「' + name + '」已加载（主模板 + ' + (item.inserts || []).length + ' 个插入段）。');
 }
 function deleteTemplate() {
     var sel = document.getElementById('saved-templates-select'); if (!sel) return;
@@ -1333,12 +2006,17 @@ function deleteTemplate() {
     var saved = _getSavedTemplates(); delete saved[name]; _putSavedTemplates(saved); _loadSavedTemplateList();
     _showSaveStatus('🗑️ 「' + name + '」已删除。');
 }
-function _showSaveStatus(msg) {
+// ★ V8.1: 统一管理 #compose-status —— 文本/颜色/背景/边框每次全量设置，任何分支切换都无样式残留
+function _setComposeStatus(msg, isError) {
     var el = document.getElementById('compose-status'); if (!el) return;
-    el.textContent = msg; el.style.display = 'block'; el.style.color = '#107C10';
-    el.style.background = '#e8f5e9'; el.style.borderColor = '#a5d6a7';
-    setTimeout(function () { el.style.display = 'none'; }, 3500);
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.style.color = isError ? '#d83b01' : '#107C10';
+    el.style.background = isError ? '#fdebe9' : '#e8f5e9';
+    el.style.borderColor = isError ? '#f4b8ae' : '#a5d6a7';
+    setTimeout(function () { el.style.display = 'none'; }, isError ? 5000 : 3500);
 }
+function _showSaveStatus(msg) { _setComposeStatus(msg, false); }
 
 // ══════════════════════════════════════════════════════
 // DOMContentLoaded 初始化
@@ -1351,9 +2029,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // ★ FIX 4: 加载保存的字符上限
     loadChunkLimit();
 
-    // ★ FIX 3: 初始化指令合成的两个默认插入段
-    addComposeBlock();
-    addComposeBlock();
+    // ★ FIX 3: 初始化指令合成的两个默认插入段（★ V8.1: skipScroll，初始化不滚动）
+    addComposeBlock(true);
+    addComposeBlock(true);
 
     _loadSavedTemplateList();
 });
